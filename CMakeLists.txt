@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21.0)
-project(su3xsu3-stream-mdrange VERSION 1.0.0 LANGUAGES CXX)
+project(su3-stream-mdrange VERSION 1.0.0 LANGUAGES CXX)
 
 # Honor already set CMAKE_CXX_STANDARD.
 # Otherwise default to C++17
