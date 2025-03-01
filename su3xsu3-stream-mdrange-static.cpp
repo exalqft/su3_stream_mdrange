@@ -249,6 +249,73 @@ void perform_mult(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc>
   Kokkos::fence();
 }
 
+template <int Nd, int Nc>
+void perform_mult_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
+                      const deviceGaugeField<Nd,Nc> c) {
+  constexpr auto rank = a.view[0].rank_dynamic();
+  const auto stream_array_size = a.view[0].extent(0);
+  const auto tiling = get_tiling(a.view[0]);
+  Kokkos::parallel_for(
+      "su3xsu3", 
+      Policy<rank>(make_repeated_sequence<rank>(0), 
+                   {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                   tiling),
+      KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l)
+      {
+        val_t tmp;
+        #pragma unroll
+        for(int mu = 0; mu < Nd; ++mu){
+          #pragma unroll
+          for(int c1 = 0; c1 < Nc; ++c1){
+            #pragma unroll
+            for(int c2 = 0; c2 < Nc; ++c2){
+              tmp = b.view[mu](i,j,k,l,c1,0) * c.view[mu](i,j,k,l,0,c2);
+              #pragma unroll
+              for(int ci = 1; ci < Nc; ++ci){
+                tmp += b.view[mu](i,j,k,l,c1,ci) * c.view[mu](i,j,k,l,ci,c2);
+              }
+              a.view[mu](i,j,k,l,c1,c2) = tmp;
+            }
+          }
+        }
+      });
+
+  Kokkos::fence();
+}
+
+template <int Nd, int Nc>
+void perform_mult_inter(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
+                        const deviceGaugeField<Nd,Nc> c) {
+  constexpr auto rank = a.view[0].rank_dynamic();
+  const auto stream_array_size = a.view[0].extent(0);
+  const auto tiling = get_tiling(a.view[0]);
+  Kokkos::parallel_for(
+      "su3xsu3", 
+      Policy<rank>(make_repeated_sequence<rank>(0), 
+                   {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                   tiling),
+      KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l)
+      {
+        val_t tmp;
+        #pragma unroll
+        for(int mu = 0; mu < Nd; ++mu){
+          #pragma unroll
+          for(int c1 = 0; c1 < Nc; ++c1){
+            #pragma unroll
+            for(int ci = 0; ci < Nc; ++ci){
+              tmp = b.view[mu](i,j,k,l,c1,ci);
+              #pragma unroll
+              for(int c2 = 0; c2 < Nc; ++c2){
+                a.view[mu](i,j,k,l,c1,c2) += tmp * c.view[mu](i,j,k,l,ci,c2);
+              }
+            }
+          }
+        }
+      });
+
+  Kokkos::fence();
+}
+
 // int perform_validation(StreamHostArray &a, StreamHostArray &b,
 //                        StreamHostArray &c, const StreamIndex arraySize,
 //                        const val_t scalar) {
@@ -379,6 +446,8 @@ int run_benchmark(const StreamIndex stream_array_size) {
   // StreamHostArray c = Kokkos::create_mirror_view(dev_c);
 
   double multTime  = std::numeric_limits<double>::max();
+  double multTmpTime  = std::numeric_limits<double>::max();
+  double multInterTime  = std::numeric_limits<double>::max();
 
   printf("Initializing Views...\n");
 
@@ -394,6 +463,14 @@ int run_benchmark(const StreamIndex stream_array_size) {
     timer.reset();
     perform_mult(dev_a, dev_b, dev_c);
     multTime = std::min(multTime, timer.seconds());
+    
+    timer.reset();
+    perform_mult_tmp(dev_a, dev_b, dev_c);
+    multTmpTime = std::min(multTmpTime, timer.seconds());
+    
+    timer.reset();
+    perform_mult_inter(dev_a, dev_b, dev_c);
+    multInterTime = std::min(multInterTime, timer.seconds());
   }
 
   // Kokkos::deep_copy(a, dev_a);
@@ -409,6 +486,12 @@ int run_benchmark(const StreamIndex stream_array_size) {
 
   printf("Mult            %11.4f GB/s\n",
          1.0e-09 * 3.0 * (double)sizeof(val_t) * nelem / multTime);
+  
+  printf("MultTmp         %11.4f GB/s\n",
+         1.0e-09 * 3.0 * (double)sizeof(val_t) * nelem / multTmpTime);
+  
+  printf("MultInter       %11.4f GB/s\n",
+         1.0e-09 * 3.0 * (double)sizeof(val_t) * nelem / multInterTime);
 
   printf(HLINE);
 
