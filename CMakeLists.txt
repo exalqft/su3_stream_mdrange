@@ -21,3 +21,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/kokkos/kokkos ${CMAKE_CU
 add_executable(su3xsu3-stream-mdrange-static su3xsu3-stream-mdrange-static.cpp)
 target_link_libraries(su3xsu3-stream-mdrange-static Kokkos::kokkos)
 
+add_executable(su3xsu3-stream-mdrange-static-mu su3xsu3-stream-mdrange-static-mu.cpp)
+target_link_libraries(su3xsu3-stream-mdrange-static-mu Kokkos::kokkos)
+
