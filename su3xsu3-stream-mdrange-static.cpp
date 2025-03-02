@@ -38,7 +38,7 @@
 //
 // ************************************************************************
 //
-// Rephrasing as a benchmark for spinor linear algebra by Bartosz Kostrzewa (Uni Bonn) 
+// Rephrasing as a benchmark for basic SU(N) operations by Bartosz Kostrzewa (Uni Bonn) 
 //
 //@HEADER
 */
@@ -61,6 +61,7 @@ using val_t = Kokkos::complex<double>;
 constexpr val_t ainit(1.0, 0.1);
 constexpr val_t binit(1.1, 0.2);
 constexpr val_t cinit(1.3, 0.3);
+constexpr val_t dinit(1.4, 0.4);
 
 //using val_t = double;
 //constexpr val_t ainit(1.0);
@@ -70,19 +71,19 @@ constexpr val_t cinit(1.3, 0.3);
 #define HLINE "-------------------------------------------------------------\n"
 
 template <int Nc>
-using SU3Field =
+using SUNField =
     Kokkos::View<val_t****[Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
 #if defined(KOKKOS_ENABLE_CUDA)
 template <int Nc>
-using constSU3Field =
+using constSUNField =
     Kokkos::View<const val_t ****[Nc][Nc], Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
 #else
 template <int Nc>
-using constSU3Field =
+using constSUNField =
     Kokkos::View<const val_t ****[Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
 #endif
 template <int Nc>
-using StreamHostArray = typename SU3Field<Nc>::HostMirror;
+using StreamHostArray = typename SUNField<Nc>::HostMirror;
 
 using StreamIndex = long int;
 
@@ -147,13 +148,13 @@ struct deviceGaugeField {
   // need to take care of 'this'-pointer capture 
   void
   do_init(std::size_t N0, std::size_t N1, std::size_t N2, std::size_t N3, 
-          Kokkos::Array<SU3Field<Nc>,Nd> & V, const val_t init){
+          Kokkos::Array<SUNField<Nc>,Nd> & V, const val_t init){
     for(int mu = 0; mu < Nd; ++mu){
       Kokkos::realloc(Kokkos::WithoutInitializing, V[mu], N0, N1, N2, N3);
     }
     
     // need a const view to get the constexpr rank
-    const SU3Field<Nc> vconst = V[0];
+    const SUNField<Nc> vconst = V[0];
     constexpr auto rank = vconst.rank_dynamic();
     const auto tiling = get_tiling(vconst);
     
@@ -177,7 +178,47 @@ struct deviceGaugeField {
     Kokkos::fence();
   }
 
-  Kokkos::Array<SU3Field<Nc>,Nd> view;
+  Kokkos::Array<SUNField<Nc>,Nd> view;
+};
+
+template <int Nc>
+struct deviceSUNField {
+  deviceSUNField() = delete;
+
+  deviceSUNField(std::size_t N0, std::size_t N1, std::size_t N2, std::size_t N3, const val_t init)
+  {
+    do_init(N0,N1,N2,N3,view,init);
+  }
+  
+  // need to take care of 'this'-pointer capture 
+  void
+  do_init(std::size_t N0, std::size_t N1, std::size_t N2, std::size_t N3, 
+          SUNField<Nc> & V, const val_t init){
+    Kokkos::realloc(Kokkos::WithoutInitializing, V, N0, N1, N2, N3);
+    
+    // need a const view to get the constexpr rank
+    const SUNField<Nc> vconst = V;
+    constexpr auto rank = vconst.rank_dynamic();
+    const auto tiling = get_tiling(vconst);
+    
+    Kokkos::parallel_for(
+      "init", 
+      Policy<rank>(make_repeated_sequence<rank>(0), {N0,N1,N2,N3}, tiling),
+      KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l)
+      {
+        #pragma unroll
+        for(int c1 = 0; c1 < Nc; ++c1){
+          #pragma unroll
+          for(int c2 = 0; c2 < Nc; ++c2){
+            V(i,j,k,l,c1,c2) = init;
+          }
+        }
+      }
+    );
+    Kokkos::fence();
+  }
+
+  SUNField<Nc> view;
 };
 
 int parse_args(int argc, char **argv, StreamIndex &stream_array_size) {
@@ -218,7 +259,7 @@ int parse_args(int argc, char **argv, StreamIndex &stream_array_size) {
 }
 
 template <int Nd, int Nc>
-void perform_mult(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
+void perform_matmul(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
                   const deviceGaugeField<Nd,Nc> c) {
   constexpr auto rank = a.view[0].rank_dynamic();
   const auto stream_array_size = a.view[0].extent(0);
@@ -250,7 +291,7 @@ void perform_mult(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc>
 }
 
 template <int Nd, int Nc>
-void perform_mult_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
+void perform_matmul_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
                       const deviceGaugeField<Nd,Nc> c) {
   constexpr auto rank = a.view[0].rank_dynamic();
   const auto stream_array_size = a.view[0].extent(0);
@@ -284,8 +325,42 @@ void perform_mult_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd
 }
 
 template <int Nd, int Nc>
-void perform_mult_inter(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
-                        const deviceGaugeField<Nd,Nc> c) {
+void perform_conj_matmul_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
+                             const deviceGaugeField<Nd,Nc> c) {
+  constexpr auto rank = a.view[0].rank_dynamic();
+  const auto stream_array_size = a.view[0].extent(0);
+  const auto tiling = get_tiling(a.view[0]);
+  Kokkos::parallel_for(
+      "conjsu3xsu3",
+      Policy<rank>(make_repeated_sequence<rank>(0), 
+                   {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                   tiling),
+      KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l)
+      {
+        val_t tmp;
+        #pragma unroll
+        for(int mu = 0; mu < Nd; ++mu){
+          #pragma unroll
+          for(int c1 = 0; c1 < Nc; ++c1){
+            #pragma unroll
+            for(int c2 = 0; c2 < Nc; ++c2){
+              tmp = conj(b.view[mu](i,j,k,l,0,c1)) * c.view[mu](i,j,k,l,0,c2);
+              #pragma unroll
+              for(int ci = 1; ci < Nc; ++ci){
+                tmp += b.view[mu](i,j,k,l,ci,c1) * c.view[mu](i,j,k,l,ci,c2);
+              }
+              a.view[mu](i,j,k,l,c1,c2) = tmp;
+            }
+          }
+        }
+      });
+
+  Kokkos::fence();
+}
+
+template <int Nd, int Nc>
+void perform_matmul_inter(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
+                          const deviceGaugeField<Nd,Nc> c) {
   constexpr auto rank = a.view[0].rank_dynamic();
   const auto stream_array_size = a.view[0].extent(0);
   const auto tiling = get_tiling(a.view[0]);
@@ -314,6 +389,105 @@ void perform_mult_inter(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<
       });
 
   Kokkos::fence();
+}
+
+template <int Nd, int Nc>
+void perform_halfstaple(const deviceSUNField<Nc> d, const deviceGaugeField<Nd,Nc> g,
+                        const int mu, const int nu)
+{
+  assert(mu < Nd && nu < Nc);
+  constexpr auto rank = d.view.rank_dynamic();
+  const auto stream_array_size = d.view.extent(0);
+  const auto tiling = get_tiling(d.view);
+  Kokkos::parallel_for(
+    "suN_halfstaple", 
+    Policy<rank>(make_repeated_sequence<rank>(0), 
+                 {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                 tiling),
+    KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l)
+    {
+      const int ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
+      const int jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
+      const int kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
+      const int lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
+      val_t tmp;
+      #pragma unroll
+      for(int c1 = 0; c1 < Nc; ++c1){
+        #pragma unroll
+        for(int c2 = 0; c2 < Nc; ++c2){
+          tmp = g.view[mu](i,j,k,l,c1,0) * g.view[nu](ipmu,jpmu,kpmu,lpmu,0,c2);
+          #pragma unroll
+          for(int ci = 1; ci < Nc; ++ci){
+            tmp += g.view[mu](i,j,k,l,c1,ci) * g.view[nu](ipmu,jpmu,kpmu,lpmu,ci,c2);
+          }
+          d.view(i,j,k,l,c1,c2) = tmp;
+        }
+      }
+    });
+  Kokkos::fence();
+}
+
+template <int Nd, int Nc>
+val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
+{
+  assert(mu < Nd && nu < Nc);
+  constexpr auto rank = g.view[0].rank_dynamic();
+  const auto stream_array_size = g.view[0].extent(0);
+  const auto tiling = get_tiling(g.view[0]);
+  
+  val_t res = 0.0;
+
+  Kokkos::parallel_reduce(
+    "suN_plaquette", 
+    Policy<rank>(make_repeated_sequence<rank>(0), 
+                 {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                 tiling),
+    KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l,
+                  val_t & lres)
+    {
+      Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> lmu, lmunu;
+
+      val_t tmu, tmunu;
+
+      #pragma unroll
+      for(int mu = 0; mu < Nd; ++mu){
+        #pragma unroll
+        for(int nu = mu; nu < Nd; ++nu){
+          // this should be expanded by hand to remove 6 out of 8 conditionals
+          const int ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
+          const int jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
+          const int kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
+          const int lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
+          const int ipmupnu = nu == 0 ? (ipmu + 1) % stream_array_size : ipmu;
+          const int jpmupnu = nu == 1 ? (jpmu + 1) % stream_array_size : jpmu;
+          const int kpmupnu = nu == 2 ? (kpmu + 1) % stream_array_size : kpmu;
+          const int lpmupnu = nu == 3 ? (lpmu + 1) % stream_array_size : lpmu;
+          #pragma unroll
+          for(int c1 = 0; c1 < Nc; ++c1){
+            #pragma unroll
+            for(int c2 = 0; c2 < Nc; ++c2){
+              tmu = g.view[mu](i,j,k,l,c1,0) * g.view[nu](ipmu,jpmu,kpmu,lpmu,0,c2);
+              tmunu = g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipmupnu,jpmupnu,kpmupnu,lpmupnu,0,c2);
+              #pragma unroll
+              for(int ci = 1; ci < Nc; ++ci){
+                tmu += g.view[mu](i,j,k,l,c1,ci) * g.view[nu](ipmu,jpmu,kpmu,lpmu,ci,c2);
+                tmunu += g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipmupnu,jpmupnu,kpmupnu,lpmupnu,0,c2);
+              }
+              lmu[c1][c2] = tmu;
+              lmunu[c1][c2] = tmunu;
+            }
+          }
+          #pragma unroll
+          for(int c = 0; c < Nc; ++c){
+            for(int ci = 0; ci < Nc; ++ci){
+              lres += lmu[c][ci] * conj(lmunu[c][ci]);
+            }
+          }
+        }
+      }
+    }, Kokkos::Sum<val_t>(res) );
+  Kokkos::fence();
+  return res;
 }
 
 // int perform_validation(StreamHostArray &a, StreamHostArray &b,
@@ -414,19 +588,22 @@ int run_benchmark(const StreamIndex stream_array_size) {
   printf("Reports fastest timing per kernel\n");
   printf("Creating Views...\n");
 
-  const double nelem = (double)stream_array_size*
-                       (double)stream_array_size*
-                       (double)stream_array_size*
-                       (double)stream_array_size*
-                       Nd*Nc*Nc;
+  const double suN_nelem = (double)stream_array_size*
+                           (double)stream_array_size*
+                           (double)stream_array_size*
+                           (double)stream_array_size*
+                           Nc*Nc;
+
+  const double gauge_nelem = Nd*suN_nelem;
 
   printf("Memory Sizes:\n");
-  printf("- Array Size:    %" PRIu64 "^4\n",
+  printf("- Gauge Array Size:    4*3*%" PRIu64 "^4\n",
          static_cast<uint64_t>(stream_array_size));
-  printf("- Per Array:     %12.2f MB\n",
-         1.0e-6 * nelem * (double)sizeof(val_t));
-  printf("- Total: %12.2f MB\n",
-         3.0e-6 * nelem * (double)sizeof(val_t));
+  printf("- Per SUNField:     %12.2f MB\n",
+         1.0e-6 * suN_nelem * (double)sizeof(val_t));
+  
+  printf("- Total:            %12.2f MB\n",
+         1.0e-6 * (suN_nelem + 3.0*gauge_nelem) * (double)sizeof(val_t));
 
   printf("Benchmark kernels will be performed for %d iterations.\n",
          STREAM_NTIMES);
@@ -434,26 +611,30 @@ int run_benchmark(const StreamIndex stream_array_size) {
   printf(HLINE);
 
   // WithoutInitializing to circumvent first touch bug on arm systems
-  // SU3Field dev_a(Kokkos::view_alloc(Kokkos::WithoutInitializing, "a"),
+  // SUNField dev_a(Kokkos::view_alloc(Kokkos::WithoutInitializing, "a"),
   //                         stream_array_size,stream_array_size,stream_array_size,stream_array_size);
-  // SU3Field dev_b(Kokkos::view_alloc(Kokkos::WithoutInitializing, "b"),
+  // SUNField dev_b(Kokkos::view_alloc(Kokkos::WithoutInitializing, "b"),
   //                         stream_array_size,stream_array_size,stream_array_size,stream_array_size);
-  // SU3Field dev_c(Kokkos::view_alloc(Kokkos::WithoutInitializing, "c"),
+  // SUNField dev_c(Kokkos::view_alloc(Kokkos::WithoutInitializing, "c"),
   //                         stream_array_size,stream_array_size,stream_array_size,stream_array_size);
 
   // StreamHostArray a = Kokkos::create_mirror_view(dev_a);
   // StreamHostArray b = Kokkos::create_mirror_view(dev_b);
   // StreamHostArray c = Kokkos::create_mirror_view(dev_c);
 
-  double multTime  = std::numeric_limits<double>::max();
-  double multTmpTime  = std::numeric_limits<double>::max();
-  double multInterTime  = std::numeric_limits<double>::max();
+  double matmulTime  = std::numeric_limits<double>::max();
+  double matmulTmpTime  = std::numeric_limits<double>::max();
+  double matmulInterTime  = std::numeric_limits<double>::max();
+  double conjMatmulTime = std::numeric_limits<double>::max();
+  double halfstapleTime = std::numeric_limits<double>::max();
+  double plaquetteTime = std::numeric_limits<double>::max();
 
   printf("Initializing Views...\n");
 
   deviceGaugeField<Nd,Nc> dev_a(stream_array_size,stream_array_size,stream_array_size,stream_array_size,ainit);
   deviceGaugeField<Nd,Nc> dev_b(stream_array_size,stream_array_size,stream_array_size,stream_array_size,binit);
   deviceGaugeField<Nd,Nc> dev_c(stream_array_size,stream_array_size,stream_array_size,stream_array_size,cinit);
+  deviceSUNField<Nc> dev_d(stream_array_size,stream_array_size,stream_array_size,stream_array_size,dinit);
 
   printf("Starting benchmarking...\n");
 
@@ -461,16 +642,28 @@ int run_benchmark(const StreamIndex stream_array_size) {
 
   for (StreamIndex k = 0; k < STREAM_NTIMES; ++k) {
     timer.reset();
-    perform_mult(dev_a, dev_b, dev_c);
-    multTime = std::min(multTime, timer.seconds());
+    perform_matmul(dev_a, dev_b, dev_c);
+    matmulTime = std::min(matmulTime, timer.seconds());
     
     timer.reset();
-    perform_mult_tmp(dev_a, dev_b, dev_c);
-    multTmpTime = std::min(multTmpTime, timer.seconds());
+    perform_matmul_tmp(dev_a, dev_b, dev_c);
+    matmulTmpTime = std::min(matmulTmpTime, timer.seconds());
     
     timer.reset();
-    perform_mult_inter(dev_a, dev_b, dev_c);
-    multInterTime = std::min(multInterTime, timer.seconds());
+    perform_matmul_inter(dev_a, dev_b, dev_c);
+    matmulInterTime = std::min(matmulInterTime, timer.seconds());
+    
+    timer.reset();
+    perform_conj_matmul_tmp(dev_a, dev_b, dev_c);
+    conjMatmulTime = std::min(conjMatmulTime, timer.seconds());
+
+    timer.reset();
+    perform_halfstaple(dev_d, dev_a,2,0);
+    halfstapleTime = std::min(halfstapleTime, timer.seconds());
+
+    timer.reset();
+    val_t plaq = perform_plaquette(dev_a);
+    plaquetteTime = std::min(plaquetteTime, timer.seconds());
   }
 
   // Kokkos::deep_copy(a, dev_a);
@@ -484,14 +677,23 @@ int run_benchmark(const StreamIndex stream_array_size) {
 
   printf(HLINE);
 
-  printf("Mult            %11.4f GB/s\n",
-         1.0e-09 * 3.0 * (double)sizeof(val_t) * nelem / multTime);
+  printf("MatMul            %11.4f GB/s\n",
+         1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / matmulTime);
   
-  printf("MultTmp         %11.4f GB/s\n",
-         1.0e-09 * 3.0 * (double)sizeof(val_t) * nelem / multTmpTime);
+  printf("MatMulTmp         %11.4f GB/s\n",
+         1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / matmulTmpTime);
   
-  printf("MultInter       %11.4f GB/s\n",
-         1.0e-09 * 3.0 * (double)sizeof(val_t) * nelem / multInterTime);
+  printf("MatMulInter       %11.4f GB/s\n",
+         1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / matmulInterTime);
+  
+  printf("conjMatMul        %11.4f GB/s\n",
+         1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / conjMatmulTime);
+  
+  printf("HalfStaple        %11.4f GB/s\n",
+         1.0e-09 * 3.0 * (double)sizeof(val_t) * suN_nelem / halfstapleTime);
+  
+  printf("Plaquette         %11.4f GB/s\n",
+         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteTime);
 
   printf(HLINE);
 
