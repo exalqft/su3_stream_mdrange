@@ -456,7 +456,7 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
       #pragma unroll
       for(int mu = 0; mu < Nd; ++mu){
         #pragma unroll
-        for(int nu = mu; nu < Nd; ++nu){
+        for(int nu = mu+1; nu < Nd; ++nu){
           // this should be expanded to remove 6 out of 8 conditionals
           const int ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
           const int jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
