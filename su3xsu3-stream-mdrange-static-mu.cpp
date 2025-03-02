@@ -264,7 +264,7 @@ int parse_args(int argc, char **argv, StreamIndex &stream_array_size) {
 
 template <int Nd, int Nc>
 void perform_matmul(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
-                  const deviceGaugeField<Nd,Nc> c) {
+                    const deviceGaugeField<Nd,Nc> c) {
   constexpr auto rank = a.view.rank_dynamic();
   const auto stream_array_size = a.view.extent(0);
   const auto tiling = get_tiling(a.view);
@@ -296,7 +296,7 @@ void perform_matmul(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,N
 
 template <int Nd, int Nc>
 void perform_matmul_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
-                      const deviceGaugeField<Nd,Nc> c) {
+                        const deviceGaugeField<Nd,Nc> c) {
   constexpr auto rank = a.view.rank_dynamic();
   const auto stream_array_size = a.view.extent(0);
   const auto tiling = get_tiling(a.view);
@@ -364,7 +364,7 @@ void perform_conj_matmul_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeF
 
 template <int Nd, int Nc>
 void perform_matmul_inter(const deviceGaugeField<Nd,Nc> a, const deviceGaugeField<Nd,Nc> b,
-                        const deviceGaugeField<Nd,Nc> c) {
+                          const deviceGaugeField<Nd,Nc> c) {
   constexpr auto rank = a.view.rank_dynamic();
   const auto stream_array_size = a.view.extent(0);
   const auto tiling = get_tiling(a.view);
