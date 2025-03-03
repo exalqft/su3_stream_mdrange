@@ -406,10 +406,10 @@ void perform_halfstaple(const deviceSUNField<Nc> d, const deviceGaugeField<Nd,Nc
                  tiling),
     KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l)
     {
-      const int ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
-      const int jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
-      const int kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
-      const int lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
+      const StreamIndex ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
+      const StreamIndex jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
+      const StreamIndex kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
+      const StreamIndex lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
       val_t tmp;
       #pragma unroll
       for(int c1 = 0; c1 < Nc; ++c1){
@@ -445,9 +445,9 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
     KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l,
                   val_t & lres)
     {
-      Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> lmu, lmunu;
+      Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> lmu, lnu;
 
-      val_t tmu, tmunu;
+      val_t tmu, tnu;
 
       #pragma unroll
       for(int mu = 0; mu < Nd; ++mu){
@@ -468,20 +468,21 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
               #pragma unroll
               for(int c2 = 0; c2 < Nc; ++c2){
                 tmu = g.view[mu](i,j,k,l,c1,0) * g.view[nu](ipmu,jpmu,kpmu,lpmu,0,c2);
-                tmunu = g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipnu,jpnu,kpnu,lpnu,0,c2);
+                tnu = g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipnu,jpnu,kpnu,lpnu,0,c2);
                 #pragma unroll
                 for(int ci = 1; ci < Nc; ++ci){
                   tmu += g.view[mu](i,j,k,l,c1,ci) * g.view[nu](ipmu,jpmu,kpmu,lpmu,ci,c2);
-                  tmunu += g.view[nu](i,j,k,l,c1,ci) * g.view[mu](ipnu,jpnu,kpnu,lpnu,ci,c2);
+                  tnu += g.view[nu](i,j,k,l,c1,ci) * g.view[mu](ipnu,jpnu,kpnu,lpnu,ci,c2);
                 }
                 lmu[c1][c2] = tmu;
-                lmunu[c1][c2] = tmunu;
+                lnu[c1][c2] = tnu;
               }
             }
             #pragma unroll
             for(int c = 0; c < Nc; ++c){
+              #pragma unroll
               for(int ci = 0; ci < Nc; ++ci){
-                lres += lmu[c][ci] * conj(lmunu[c][ci]);
+                lres += lmu[c][ci] * conj(lnu[c][ci]);
               }
             }
           }

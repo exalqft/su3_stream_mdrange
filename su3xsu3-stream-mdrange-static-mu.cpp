@@ -479,6 +479,7 @@ plaq_kernel(Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> & lmu,
   }
   #pragma unroll
   for(int c = 0; c < Nc; ++c){
+    #pragma unroll
     for(int ci = 0; ci < Nc; ++ci){
       lres += lmu[c][ci] * conj(lnu[c][ci]);
     }
@@ -576,6 +577,7 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
             }
             #pragma unroll
             for(int c = 0; c < Nc; ++c){
+              #pragma unroll
               for(int ci = 0; ci < Nc; ++ci){
                 lres += lmu[c][ci] * conj(lnu[c][ci]);
               }
