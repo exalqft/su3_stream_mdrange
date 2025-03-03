@@ -395,7 +395,7 @@ template <int Nd, int Nc>
 void perform_halfstaple(const deviceSUNField<Nc> d, const deviceGaugeField<Nd,Nc> g,
                         const int mu, const int nu)
 {
-  assert(mu < Nd && nu < Nc);
+  assert(mu < Nd && nu < Nd);
   constexpr auto rank = d.view.rank_dynamic();
   const auto stream_array_size = d.view.extent(0);
   const auto tiling = get_tiling(d.view);
@@ -430,7 +430,7 @@ void perform_halfstaple(const deviceSUNField<Nc> d, const deviceGaugeField<Nd,Nc
 template <int Nd, int Nc>
 val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
 {
-  assert(mu < Nd && nu < Nc);
+  assert(mu < Nd && nu < Nd);
   constexpr auto rank = g.view[0].rank_dynamic();
   const auto stream_array_size = g.view[0].extent(0);
   const auto tiling = get_tiling(g.view[0]);

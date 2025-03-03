@@ -83,10 +83,18 @@ using SUNField =
 template <int Nd, int Nc>
 using constGaugeField =
     Kokkos::View<const val_t ****[Nd][Nc][Nc], Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+
+template <int Nc>
+using constSUNField =
+    Kokkos::View<const val_t****[Nc][Nc], Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
 #else
 template <int Nd, int Nc>
 using constGaugeField =
     Kokkos::View<const val_t ****[Nd][Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
+
+template <int Nc>
+using constSUNField =
+    Kokkos::View<const val_t****[Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
 #endif
 template <int Nd, int Nc>
 using StreamHostArray = typename GaugeField<Nd,Nc>::HostMirror;
@@ -399,7 +407,7 @@ template <int Nd, int Nc>
 void perform_halfstaple(const deviceSUNField<Nc> d, const deviceGaugeField<Nd,Nc> g,    
                         const int mu, const int nu)    
 {    
-  assert(mu < Nd && nu < Nc);    
+  assert(mu < Nd && nu < Nd);    
   constexpr auto rank = d.view.rank_dynamic();    
   const auto stream_array_size = d.view.extent(0);    
   const auto tiling = get_tiling(d.view);    
@@ -477,6 +485,7 @@ plaq_kernel(Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> & lmu,
       lnu[c1][c2] = tnu;
     }
   }
+
   #pragma unroll
   for(int c = 0; c < Nc; ++c){
     #pragma unroll
@@ -489,7 +498,7 @@ plaq_kernel(Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> & lmu,
 template <int Nd, int Nc>
 val_t perform_plaquette_kernel(const deviceGaugeField<Nd,Nc> g_in)
 {
-  assert(mu < Nd && nu < Nc);
+  assert(mu < Nd && nu < Nd);
   constexpr auto rank = g_in.view.rank_dynamic();
   const auto stream_array_size = g_in.view.extent(0);
   const auto tiling = get_tiling(g_in.view);
@@ -525,7 +534,7 @@ val_t perform_plaquette_kernel(const deviceGaugeField<Nd,Nc> g_in)
 template <int Nd, int Nc>
 val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
 {
-  assert(mu < Nd && nu < Nc);
+  assert(mu < Nd && nu < Nd);
   constexpr auto rank = g_in.view.rank_dynamic();
   const auto stream_array_size = g_in.view.extent(0);
   const auto tiling = get_tiling(g_in.view);
@@ -584,6 +593,107 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
             }
           }
         }
+      }
+    }, Kokkos::Sum<val_t>(res) );
+  Kokkos::fence();
+  return res;
+}
+
+template <int Nd, int Nc>
+void perform_plaquette_notrace(const deviceSUNField<Nc> plaq_out, const deviceGaugeField<Nd,Nc> g_in)
+{
+  assert(mu < Nd && nu < Nd);
+  constexpr auto rank = g_in.view.rank_dynamic();
+  const auto stream_array_size = g_in.view.extent(0);
+  const auto tiling = get_tiling(g_in.view);
+
+  const constGaugeField<Nd,Nc> g(g_in.view); 
+  
+  Kokkos::parallel_for(
+    "suN_plaquette", 
+    Policy<rank>(make_repeated_sequence<rank>(0), 
+                 {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                 tiling),
+    KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l)
+    {
+      Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> lmu, lnu;
+
+      val_t tmu, tnu;
+      
+      #pragma unroll
+      for(int c = 0; c < Nc; ++c){
+        plaq_out.view(i,j,k,l,c,c) = 0;
+      }
+
+      #pragma unroll
+      for(int mu = 0; mu < Nd; ++mu){
+        #pragma unroll
+        for(int nu = 0; nu < Nd; ++nu){
+          // unrolling only works well with constant-value loop limits
+          if( nu > mu ){
+            const StreamIndex ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
+            const StreamIndex jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
+            const StreamIndex kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
+            const StreamIndex lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
+            const StreamIndex ipnu = nu == 0 ? (i + 1) % stream_array_size : i;
+            const StreamIndex jpnu = nu == 1 ? (j + 1) % stream_array_size : j;
+            const StreamIndex kpnu = nu == 2 ? (k + 1) % stream_array_size : k;
+            const StreamIndex lpnu = nu == 3 ? (l + 1) % stream_array_size : l;
+            #pragma unroll
+            for(int c1 = 0; c1 < Nc; ++c1){
+              #pragma unroll
+              for(int c2 = 0; c2 < Nc; ++c2){
+                tmu = g(i,j,k,l,mu,c1,0) * g(ipmu,jpmu,kpmu,lpmu,nu,0,c2);
+                tnu = g(i,j,k,l,nu,c1,0) * g(ipnu,jpnu,kpnu,lpnu,mu,0,c2);
+                #pragma unroll
+                for(int ci = 1; ci < Nc; ++ci){
+                  tmu += g(i,j,k,l,mu,c1,ci) * g(ipmu,jpmu,kpmu,lpmu,nu,ci,c2);
+                  tnu += g(i,j,k,l,nu,c1,ci) * g(ipnu,jpnu,kpnu,lpnu,mu,ci,c2);
+                }
+                lmu[c1][c2] = tmu;
+                lnu[c1][c2] = tnu;
+              }
+            }
+            #pragma unroll
+            for(int c = 0; c < Nc; ++c){
+              tmu = lmu[c][0] * conj(lnu[c][0]);
+              #pragma unroll
+              for(int ci = 1; ci < Nc; ++ci){
+                tmu += lmu[c][ci] * conj(lnu[c][ci]);
+              }
+              // we sum up all the plaquettes since we are only interested
+              // in the trace -> we do only the diagonal
+              plaq_out.view(i,j,k,l,c,c) += tmu;
+            }
+          }
+        }
+      }
+    });
+  Kokkos::fence();
+}
+
+template <int Nc>
+val_t perform_sun_trace(const deviceSUNField<Nc> plaq_in)
+{
+  constexpr auto rank = plaq_in.view.rank_dynamic();
+  const auto stream_array_size = plaq_in.view.extent(0);
+  const auto tiling = get_tiling(plaq_in.view);
+
+  const constSUNField<Nc> plaq(plaq_in.view); 
+  
+  val_t res = 0.0;
+
+  Kokkos::parallel_reduce(
+    "suN_trace", 
+    Policy<rank>(make_repeated_sequence<rank>(0), 
+                 {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                 tiling),
+    KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l,
+                  val_t & lres)
+    {
+      #pragma unroll
+      for(int c = 0; c < Nc; ++c){
+        lres += plaq(i,j,k,l,c,c);
       }
     }, Kokkos::Sum<val_t>(res) );
   Kokkos::fence();
@@ -730,6 +840,9 @@ int run_benchmark(const StreamIndex stream_array_size) {
   double halfstapleTime = std::numeric_limits<double>::max();
   double plaquetteTime = std::numeric_limits<double>::max();
   double plaquetteKernelTime = std::numeric_limits<double>::max();
+  double plaquetteNotraceTime = std::numeric_limits<double>::max();
+  double plaquetteTraceTime = std::numeric_limits<double>::max();
+  double plaquetteNotraceTraceTime = std::numeric_limits<double>::max();
 
   printf("Initializing Views...\n");
 
@@ -766,13 +879,26 @@ int run_benchmark(const StreamIndex stream_array_size) {
     timer.reset();
     val_t plaq = perform_plaquette(dev_b);
     plaquetteTime = std::min(plaquetteTime, timer.seconds());
-    // if (k == 2) std::cout << "Plaquette: " << plaq << "\n";
+    //if (k == 2) std::cout << "Plaquette: " << plaq << "\n";
     
     timer.reset();
     plaq = perform_plaquette_kernel(dev_c);
     plaquetteKernelTime = std::min(plaquetteKernelTime, timer.seconds());
-    // if (k == 2) std::cout << "Plaquette(Kernel): " << plaq << "\n";
+    //if (k == 2) std::cout << "Plaquette(Kernel): " << plaq << "\n";
 
+    timer.reset();
+    perform_plaquette_notrace(dev_d, dev_b);
+    plaquetteNotraceTime = std::min(plaquetteNotraceTime, timer.seconds());
+
+    timer.reset();
+    perform_sun_trace(dev_d);
+    plaquetteTraceTime = std::min(plaquetteTraceTime, timer.seconds());
+
+    timer.reset();
+    perform_plaquette_notrace(dev_d, dev_c);
+    plaq = perform_sun_trace(dev_d);
+    plaquetteNotraceTraceTime = std::min(plaquetteNotraceTraceTime, timer.seconds());
+    //if (k == 2) std::cout << "Plaquette(Notrace,Trace): " << plaq << "\n";
   }
 
   // Kokkos::deep_copy(a, dev_a);
@@ -786,28 +912,47 @@ int run_benchmark(const StreamIndex stream_array_size) {
 
   printf(HLINE);
 
-  printf("MatMul            %11.4f GB/s\n",
+  printf("MatMul                  %11.4f GB/s\n",
          1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / matmulTime);
   
-  printf("MatMulTmp         %11.4f GB/s\n",
+  printf("MatMulTmp               %11.4f GB/s\n",
          1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / matmulTmpTime);
   
-  printf("MatMulInter       %11.4f GB/s\n",
+  printf("MatMulInter             %11.4f GB/s\n",
          1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / matmulInterTime);
 
-  printf("conjMatMul        %11.4f GB/s\n",
+  printf("conjMatMul              %11.4f GB/s\n",
          1.0e-09 * 3.0 * (double)sizeof(val_t) * gauge_nelem / conjMatmulTime);
   
-  printf("HalfStaple        %11.4f GB/s\n",
+  printf("HalfStaple              %11.4f GB/s\n",
          1.0e-09 * 3.0 * (double)sizeof(val_t) * suN_nelem / halfstapleTime);
   
-  printf("Plaquette         %11.4f GB/s\n",
-         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteTime);
+  printf("Plaquette               %11.4f GB/s %11.4e s\n",
+         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteTime,
+         plaquetteTime);
 
-  printf("Plaquette Kernel  %11.4f GB/s\n",
-         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteKernelTime);
+  printf("Plaquette Kernel        %11.4f GB/s %11.4e s\n",
+         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteKernelTime,
+         plaquetteKernelTime);
+  
+  // the Notrace plaquette kernel only writes the diagonal elements
+  // of the output SUNField
+  printf("Plaquette Notrace       %11.4f GB/s %11.4e s\n",
+         1.0e-09 * (4.0 + 1.0/3.0) * (double)sizeof(val_t) * suN_nelem / plaquetteNotraceTime,
+         plaquetteNotraceTime);
 
-  printf("Plaquette         %11.4f Gflop/s\n",
+  // the Trace only reads the diagonal elements of the input SUN Field
+  printf("Plaquette Trace         %11.4f GB/s %11.4e s\n",
+         1.0e-09 * (1.0/3.0) * (double)sizeof(val_t) * suN_nelem / plaquetteTraceTime,
+         plaquetteTraceTime);
+
+  // NotraceTrace = "Plaquette Notrace + Plaquette Trace" -> only writes and reads the diagonal elements
+  printf("Plaquette NotraceTrace  %11.4f GB/s %11.4e s\n",
+         1.0e-09 * (4.0 + 2.0/3.0) * (double)sizeof(val_t) * suN_nelem / plaquetteNotraceTraceTime,
+         plaquetteNotraceTraceTime);
+
+  printf("\n"
+         "Plaquette               %11.4f Gflop/s\n",
          1.0e-09 * nelem *
            6.0 *                 // six plaquettes in 4D      
          ( (2 * 9 * (18 + 4)) +  // two su3 multiplications
@@ -815,11 +960,19 @@ int run_benchmark(const StreamIndex stream_array_size) {
            (3) )                 // trace accumulation (our plaquette is complex but we're interested only in the real part)
          / plaquetteTime); 
 
-  printf("Plaquette Kernel  %11.4f Gflop/s\n",
-         1.0e-09 * 6.0 * nelem *
-         ( (2 * 9 * (18 + 4)) +
-           (3 * (18 + 4))     +
-           (3) ) / plaquetteKernelTime);
+  printf("Plaquette Kernel        %11.4f Gflop/s\n",
+         1.0e-09 * 6.0 * nelem * // six plaquettes in 4D
+         ( (2 * 9 * (18 + 4)) +  // two su3 mults
+           (3 * (18 + 4))     +  // one su3 mult (diagonal elems only)
+           (3) )                 // trace accumulation (complex but we care only about the real part)
+         / plaquetteKernelTime);
+
+  printf("Plaquette Notrace       %11.4f Gflop/s\n",
+         1.0e-09 * nelem *
+           6.0 *                 // six plaquettes in 4D      
+         ( (2 * 9 * (18 + 4)) +  // two su3 multiplications
+           (3 * (18 + 4)))       // one su3 multiplcation (diagonal elements only)
+         / plaquetteNotraceTime); 
 
   printf(HLINE);
 
