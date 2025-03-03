@@ -85,7 +85,7 @@ using constSUNField =
 template <int Nc>
 using StreamHostArray = typename SUNField<Nc>::HostMirror;
 
-using StreamIndex = long int;
+using StreamIndex = int;
 
 template <int rank>
 using Policy      = Kokkos::MDRangePolicy<Kokkos::Rank<rank>>;
@@ -453,25 +453,24 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
       for(int mu = 0; mu < Nd; ++mu){
         #pragma unroll
         for(int nu = mu+1; nu < Nd; ++nu){
-          // this should be expanded by hand to remove 6 out of 8 conditionals
-          const int ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
-          const int jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
-          const int kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
-          const int lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
-          const int ipmupnu = nu == 0 ? (ipmu + 1) % stream_array_size : ipmu;
-          const int jpmupnu = nu == 1 ? (jpmu + 1) % stream_array_size : jpmu;
-          const int kpmupnu = nu == 2 ? (kpmu + 1) % stream_array_size : kpmu;
-          const int lpmupnu = nu == 3 ? (lpmu + 1) % stream_array_size : lpmu;
+          const StreamIndex ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
+          const StreamIndex jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
+          const StreamIndex kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
+          const StreamIndex lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
+          const StreamIndex ipnu = nu == 0 ? (i + 1) % stream_array_size : i;
+          const StreamIndex jpnu = nu == 1 ? (j + 1) % stream_array_size : j;
+          const StreamIndex kpnu = nu == 2 ? (k + 1) % stream_array_size : k;
+          const StreamIndex lpnu = nu == 3 ? (l + 1) % stream_array_size : l;
           #pragma unroll
           for(int c1 = 0; c1 < Nc; ++c1){
             #pragma unroll
             for(int c2 = 0; c2 < Nc; ++c2){
               tmu = g.view[mu](i,j,k,l,c1,0) * g.view[nu](ipmu,jpmu,kpmu,lpmu,0,c2);
-              tmunu = g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipmupnu,jpmupnu,kpmupnu,lpmupnu,0,c2);
+              tmunu = g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipnu,jpnu,kpnu,lpnu,0,c2);
               #pragma unroll
               for(int ci = 1; ci < Nc; ++ci){
                 tmu += g.view[mu](i,j,k,l,c1,ci) * g.view[nu](ipmu,jpmu,kpmu,lpmu,ci,c2);
-                tmunu += g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipmupnu,jpmupnu,kpmupnu,lpmupnu,0,c2);
+                tmunu += g.view[nu](i,j,k,l,c1,ci) * g.view[mu](ipnu,jpnu,kpnu,lpnu,ci,c2);
               }
               lmu[c1][c2] = tmu;
               lmunu[c1][c2] = tmunu;
@@ -662,10 +661,10 @@ int run_benchmark(const StreamIndex stream_array_size) {
     halfstapleTime = std::min(halfstapleTime, timer.seconds());
 
     timer.reset();
-    val_t plaq = perform_plaquette(dev_a);
+    val_t plaq = perform_plaquette(dev_b);
     plaquetteTime = std::min(plaquetteTime, timer.seconds());
+    // if( k == 2 ) std::cout << "Plaquette: " << plaq << "\n";
   }
-
   // Kokkos::deep_copy(a, dev_a);
   // Kokkos::deep_copy(b, dev_b);
   // Kokkos::deep_copy(c, dev_c);

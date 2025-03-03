@@ -79,19 +79,19 @@ using SUNField =
     Kokkos::View<val_t****[Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
 
 
-//#if defined(KOKKOS_ENABLE_CUDA)
-//template <int Nd, int Nc>
-//using constGaugeField =
-//    Kokkos::View<const val_t ****[Nd][Nc][Nc], Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-//#else
-//template <int Nd, int Nc>
-//using constGaugeField =
-//    Kokkos::View<const val_t ****[Nd][Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
-//#endif
-//template <int Nd, int Nc>
-//using StreamHostArray = typename GaugeField<Nd,Nc>::HostMirror;
+#if defined(KOKKOS_ENABLE_CUDA)
+template <int Nd, int Nc>
+using constGaugeField =
+    Kokkos::View<const val_t ****[Nd][Nc][Nc], Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+#else
+template <int Nd, int Nc>
+using constGaugeField =
+    Kokkos::View<const val_t ****[Nd][Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
+#endif
+template <int Nd, int Nc>
+using StreamHostArray = typename GaugeField<Nd,Nc>::HostMirror;
 
-using StreamIndex = long int;
+using StreamIndex = int;
 
 template <int rank>
 using Policy      = Kokkos::MDRangePolicy<Kokkos::Rank<rank>>;
@@ -431,13 +431,105 @@ void perform_halfstaple(const deviceSUNField<Nc> d, const deviceGaugeField<Nd,Nc
   Kokkos::fence();    
 }    
 
+template<int mu, int shift, typename SizeType>
+constexpr
+KOKKOS_FORCEINLINE_FUNCTION
+StreamIndex
+shift_index(const StreamIndex & i, const SizeType & stream_array_size)
+{
+  if constexpr ( mu == shift ){
+    return (i + 1) % stream_array_size;
+  } else {
+    return i;
+  }
+}
+
+template <int Nd, int Nc, int mu, int nu, typename SizeType>
+KOKKOS_FORCEINLINE_FUNCTION
+void
+plaq_kernel(Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> & lmu,
+            Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> & lmunu,
+            const constGaugeField<Nd,Nc> & g,
+            const StreamIndex & i, const StreamIndex & j, const StreamIndex & k, const StreamIndex & l,
+            val_t & lres, val_t & tmu, val_t & tmunu, const SizeType & stream_array_size)
+{
+  const StreamIndex ipmu = shift_index<0,mu>(i, stream_array_size);
+  const StreamIndex jpmu = shift_index<1,mu>(j, stream_array_size);
+  const StreamIndex kpmu = shift_index<2,mu>(k, stream_array_size);
+  const StreamIndex lpmu = shift_index<3,mu>(l, stream_array_size);
+  const StreamIndex ipnu = shift_index<0,nu>(i, stream_array_size);
+  const StreamIndex jpnu = shift_index<1,nu>(j, stream_array_size);
+  const StreamIndex kpnu = shift_index<2,nu>(k, stream_array_size);
+  const StreamIndex lpnu = shift_index<3,nu>(l, stream_array_size);
+
+  #pragma unroll
+  for(int c1 = 0; c1 < Nc; ++c1){
+    #pragma unroll
+    for(int c2 = 0; c2 < Nc; ++c2){
+      tmu = g(i,j,k,l,mu,c1,0) * g(ipmu,jpmu,kpmu,lpmu,nu,0,c2);
+      tmunu = g(i,j,k,l,nu,c1,0) * g(ipnu,jpnu,kpnu,lpnu,mu,0,c2);
+      #pragma unroll
+      for(int ci = 1; ci < Nc; ++ci){
+        tmu += g(i,j,k,l,mu,c1,ci) * g(ipmu,jpmu,kpmu,lpmu,nu,ci,c2);
+        tmunu += g(i,j,k,l,nu,c1,ci) * g(ipnu,jpnu,kpnu,lpnu,mu,ci,c2);
+      }
+      lmu[c1][c2] = tmu;
+      lmunu[c1][c2] = tmunu;
+    }
+  }
+  #pragma unroll
+  for(int c = 0; c < Nc; ++c){
+    for(int ci = 0; ci < Nc; ++ci){
+      lres += lmu[c][ci] * conj(lmunu[c][ci]);
+    }
+  }
+}
+
 template <int Nd, int Nc>
-val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
+val_t perform_plaquette_kernel(const deviceGaugeField<Nd,Nc> g_in)
 {
   assert(mu < Nd && nu < Nc);
-  constexpr auto rank = g.view.rank_dynamic();
-  const auto stream_array_size = g.view.extent(0);
-  const auto tiling = get_tiling(g.view);
+  constexpr auto rank = g_in.view.rank_dynamic();
+  const auto stream_array_size = g_in.view.extent(0);
+  const auto tiling = get_tiling(g_in.view);
+
+  const constGaugeField<Nd,Nc> g(g_in.view); 
+  
+  val_t res = 0.0;
+
+  Kokkos::parallel_reduce(
+    "suN_plaquette_kernel", 
+    Policy<rank>(make_repeated_sequence<rank>(0), 
+                 {stream_array_size,stream_array_size,stream_array_size,stream_array_size}, 
+                 tiling),
+    KOKKOS_LAMBDA(const StreamIndex i, const StreamIndex j, const StreamIndex k, const StreamIndex l,
+                  val_t & lres)
+    {
+      Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> lmu, lmunu;
+
+      val_t tmu, tmunu;
+
+      if (Nd > 1) plaq_kernel<Nd,Nc,0,1>(lmu, lmunu, g, i, j, k, l, lres, tmu, tmunu, stream_array_size);
+      if (Nd > 2) plaq_kernel<Nd,Nc,0,2>(lmu, lmunu, g, i, j, k, l, lres, tmu, tmunu, stream_array_size);
+      if (Nd > 3) plaq_kernel<Nd,Nc,0,3>(lmu, lmunu, g, i, j, k, l, lres, tmu, tmunu, stream_array_size);
+      if (Nd > 2) plaq_kernel<Nd,Nc,1,2>(lmu, lmunu, g, i, j, k, l, lres, tmu, tmunu, stream_array_size);
+      if (Nd > 3) plaq_kernel<Nd,Nc,1,3>(lmu, lmunu, g, i, j, k, l, lres, tmu, tmunu, stream_array_size);
+      if (Nd > 3) plaq_kernel<Nd,Nc,2,3>(lmu, lmunu, g, i, j, k, l, lres, tmu, tmunu, stream_array_size);
+
+    }, Kokkos::Sum<val_t>(res) );
+  Kokkos::fence();
+  return res;
+}
+
+template <int Nd, int Nc>
+val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
+{
+  assert(mu < Nd && nu < Nc);
+  constexpr auto rank = g_in.view.rank_dynamic();
+  const auto stream_array_size = g_in.view.extent(0);
+  const auto tiling = get_tiling(g_in.view);
+
+  const constGaugeField<Nd,Nc> g(g_in.view); 
   
   val_t res = 0.0;
 
@@ -457,25 +549,24 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
       for(int mu = 0; mu < Nd; ++mu){
         #pragma unroll
         for(int nu = mu+1; nu < Nd; ++nu){
-          // this should be expanded to remove 6 out of 8 conditionals
-          const int ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
-          const int jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
-          const int kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
-          const int lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
-          const int ipmupnu = nu == 0 ? (ipmu + 1) % stream_array_size : ipmu;
-          const int jpmupnu = nu == 1 ? (jpmu + 1) % stream_array_size : jpmu;
-          const int kpmupnu = nu == 2 ? (kpmu + 1) % stream_array_size : kpmu;
-          const int lpmupnu = nu == 3 ? (lpmu + 1) % stream_array_size : lpmu;
+          const StreamIndex ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
+          const StreamIndex jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
+          const StreamIndex kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
+          const StreamIndex lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
+          const StreamIndex ipnu = nu == 0 ? (i + 1) % stream_array_size : i;
+          const StreamIndex jpnu = nu == 1 ? (j + 1) % stream_array_size : j;
+          const StreamIndex kpnu = nu == 2 ? (k + 1) % stream_array_size : k;
+          const StreamIndex lpnu = nu == 3 ? (l + 1) % stream_array_size : l;
           #pragma unroll
           for(int c1 = 0; c1 < Nc; ++c1){
             #pragma unroll
             for(int c2 = 0; c2 < Nc; ++c2){
-              tmu = g.view(i,j,k,l,mu,c1,0) * g.view(ipmu,jpmu,kpmu,lpmu,nu,0,c2);
-              tmunu = g.view(i,j,k,l,nu,c1,0) * g.view(ipmupnu,jpmupnu,kpmupnu,lpmupnu,mu,0,c2);
+              tmu = g(i,j,k,l,mu,c1,0) * g(ipmu,jpmu,kpmu,lpmu,nu,0,c2);
+              tmunu = g(i,j,k,l,nu,c1,0) * g(ipnu,jpnu,kpnu,lpnu,mu,0,c2);
               #pragma unroll
               for(int ci = 1; ci < Nc; ++ci){
-                tmu += g.view(i,j,k,l,mu,c1,ci) * g.view(ipmu,jpmu,kpmu,lpmu,nu,ci,c2);
-                tmunu += g.view(i,j,k,l,nu,c1,0) * g.view(ipmupnu,jpmupnu,kpmupnu,lpmupnu,mu,0,c2);
+                tmu += g(i,j,k,l,mu,c1,ci) * g(ipmu,jpmu,kpmu,lpmu,nu,ci,c2);
+                tmunu += g(i,j,k,l,nu,c1,ci) * g(ipnu,jpnu,kpnu,lpnu,mu,ci,c2);
               }
               lmu[c1][c2] = tmu;
               lmunu[c1][c2] = tmunu;
@@ -601,7 +692,8 @@ int run_benchmark(const StreamIndex stream_array_size) {
   const double gauge_nelem = Nd*suN_nelem;
 
   printf("Memory Sizes:\n");
-  printf("- Gauge Array Size:  4*3*%" PRIu64 "^4\n",
+  printf("- Gauge Array Size:  %d*%d*%" PRIu64 "^4\n",
+         Nd, Nc,
          static_cast<uint64_t>(stream_array_size));
   printf("- Per SUNField:          %12.2f MB\n",
          1.0e-6 * suN_nelem * (double)sizeof(val_t));
@@ -631,6 +723,7 @@ int run_benchmark(const StreamIndex stream_array_size) {
   double conjMatmulTime  = std::numeric_limits<double>::max();
   double halfstapleTime = std::numeric_limits<double>::max();
   double plaquetteTime = std::numeric_limits<double>::max();
+  double plaquetteKernelTime = std::numeric_limits<double>::max();
 
   printf("Initializing Views...\n");
 
@@ -656,7 +749,7 @@ int run_benchmark(const StreamIndex stream_array_size) {
     perform_matmul_inter(dev_a, dev_b, dev_c);
     matmulInterTime = std::min(matmulInterTime, timer.seconds());
   
-	timer.reset();
+    timer.reset();
     perform_conj_matmul_tmp(dev_a, dev_b, dev_c);
     conjMatmulTime = std::min(conjMatmulTime, timer.seconds());
 
@@ -665,8 +758,15 @@ int run_benchmark(const StreamIndex stream_array_size) {
     halfstapleTime = std::min(halfstapleTime, timer.seconds());
 
     timer.reset();
-    val_t plaq = perform_plaquette(dev_a);
+    val_t plaq = perform_plaquette(dev_b);
     plaquetteTime = std::min(plaquetteTime, timer.seconds());
+    // if (k == 2) std::cout << "Plaquette: " << plaq << "\n";
+    
+    timer.reset();
+    plaq = perform_plaquette_kernel(dev_c);
+    plaquetteKernelTime = std::min(plaquetteKernelTime, timer.seconds());
+    // if (k == 2) std::cout << "Plaquette(Kernel): " << plaq << "\n";
+
   }
 
   // Kokkos::deep_copy(a, dev_a);
@@ -697,6 +797,9 @@ int run_benchmark(const StreamIndex stream_array_size) {
   
   printf("Plaquette         %11.4f GB/s\n",
          1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteTime);
+
+  printf("Plaquette Kernel  %11.4f GB/s\n",
+         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteKernelTime);
 
   printf(HLINE);
 
