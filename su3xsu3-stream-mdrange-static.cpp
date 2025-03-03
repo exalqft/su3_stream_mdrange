@@ -452,34 +452,37 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
       #pragma unroll
       for(int mu = 0; mu < Nd; ++mu){
         #pragma unroll
-        for(int nu = mu+1; nu < Nd; ++nu){
-          const StreamIndex ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
-          const StreamIndex jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
-          const StreamIndex kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
-          const StreamIndex lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
-          const StreamIndex ipnu = nu == 0 ? (i + 1) % stream_array_size : i;
-          const StreamIndex jpnu = nu == 1 ? (j + 1) % stream_array_size : j;
-          const StreamIndex kpnu = nu == 2 ? (k + 1) % stream_array_size : k;
-          const StreamIndex lpnu = nu == 3 ? (l + 1) % stream_array_size : l;
-          #pragma unroll
-          for(int c1 = 0; c1 < Nc; ++c1){
+        for(int nu = 0; nu < Nd; ++nu){
+          // unrolling only works well with constant-value loop limits
+          if( nu > mu ){
+            const StreamIndex ipmu = mu == 0 ? (i + 1) % stream_array_size : i;
+            const StreamIndex jpmu = mu == 1 ? (j + 1) % stream_array_size : j;
+            const StreamIndex kpmu = mu == 2 ? (k + 1) % stream_array_size : k;
+            const StreamIndex lpmu = mu == 3 ? (l + 1) % stream_array_size : l;
+            const StreamIndex ipnu = nu == 0 ? (i + 1) % stream_array_size : i;
+            const StreamIndex jpnu = nu == 1 ? (j + 1) % stream_array_size : j;
+            const StreamIndex kpnu = nu == 2 ? (k + 1) % stream_array_size : k;
+            const StreamIndex lpnu = nu == 3 ? (l + 1) % stream_array_size : l;
             #pragma unroll
-            for(int c2 = 0; c2 < Nc; ++c2){
-              tmu = g.view[mu](i,j,k,l,c1,0) * g.view[nu](ipmu,jpmu,kpmu,lpmu,0,c2);
-              tmunu = g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipnu,jpnu,kpnu,lpnu,0,c2);
+            for(int c1 = 0; c1 < Nc; ++c1){
               #pragma unroll
-              for(int ci = 1; ci < Nc; ++ci){
-                tmu += g.view[mu](i,j,k,l,c1,ci) * g.view[nu](ipmu,jpmu,kpmu,lpmu,ci,c2);
-                tmunu += g.view[nu](i,j,k,l,c1,ci) * g.view[mu](ipnu,jpnu,kpnu,lpnu,ci,c2);
+              for(int c2 = 0; c2 < Nc; ++c2){
+                tmu = g.view[mu](i,j,k,l,c1,0) * g.view[nu](ipmu,jpmu,kpmu,lpmu,0,c2);
+                tmunu = g.view[nu](i,j,k,l,c1,0) * g.view[mu](ipnu,jpnu,kpnu,lpnu,0,c2);
+                #pragma unroll
+                for(int ci = 1; ci < Nc; ++ci){
+                  tmu += g.view[mu](i,j,k,l,c1,ci) * g.view[nu](ipmu,jpmu,kpmu,lpmu,ci,c2);
+                  tmunu += g.view[nu](i,j,k,l,c1,ci) * g.view[mu](ipnu,jpnu,kpnu,lpnu,ci,c2);
+                }
+                lmu[c1][c2] = tmu;
+                lmunu[c1][c2] = tmunu;
               }
-              lmu[c1][c2] = tmu;
-              lmunu[c1][c2] = tmunu;
             }
-          }
-          #pragma unroll
-          for(int c = 0; c < Nc; ++c){
-            for(int ci = 0; ci < Nc; ++ci){
-              lres += lmu[c][ci] * conj(lmunu[c][ci]);
+            #pragma unroll
+            for(int c = 0; c < Nc; ++c){
+              for(int ci = 0; ci < Nc; ++ci){
+                lres += lmu[c][ci] * conj(lmunu[c][ci]);
+              }
             }
           }
         }
