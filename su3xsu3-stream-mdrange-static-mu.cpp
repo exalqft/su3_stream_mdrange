@@ -57,7 +57,8 @@
 
 #define STREAM_NTIMES 20
 
-using val_t = Kokkos::complex<double>;
+using real_t = double;
+using val_t = Kokkos::complex<real_t>;
 constexpr val_t ainit(1.0, 0.1);
 constexpr val_t binit(1.1, 0.2);
 constexpr val_t cinit(1.3, 0.3);
@@ -359,7 +360,7 @@ void perform_conj_matmul_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeF
               tmp = conj(b.view(i,j,k,l,mu,0,c1)) * c.view(i,j,k,l,mu,0,c2);
               #pragma unroll
               for(int ci = 1; ci < Nc; ++ci){
-                tmp += b.view(i,j,k,l,mu,ci,c1) * c.view(i,j,k,l,mu,ci,c2);
+                tmp += conj(b.view(i,j,k,l,mu,ci,c1)) * c.view(i,j,k,l,mu,ci,c2);
               }
               a.view(i,j,k,l,mu,c1,c2) = tmp;
             }
@@ -519,12 +520,12 @@ val_t perform_plaquette_kernel(const deviceGaugeField<Nd,Nc> g_in)
 
       val_t tmu, tnu;
 
-      if (Nd > 1) plaq_kernel<Nd,Nc,0,1>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if (Nd > 2) plaq_kernel<Nd,Nc,0,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if (Nd > 3) plaq_kernel<Nd,Nc,0,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if (Nd > 2) plaq_kernel<Nd,Nc,1,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if (Nd > 3) plaq_kernel<Nd,Nc,1,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if (Nd > 3) plaq_kernel<Nd,Nc,2,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if constexpr (Nd > 1) plaq_kernel<Nd,Nc,0,1>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if constexpr (Nd > 2) plaq_kernel<Nd,Nc,0,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if constexpr (Nd > 3) plaq_kernel<Nd,Nc,0,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if constexpr (Nd > 2) plaq_kernel<Nd,Nc,1,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if constexpr (Nd > 3) plaq_kernel<Nd,Nc,1,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if constexpr (Nd > 3) plaq_kernel<Nd,Nc,2,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
 
     }, Kokkos::Sum<val_t>(res) );
   Kokkos::fence();
