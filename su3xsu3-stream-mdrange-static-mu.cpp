@@ -57,7 +57,8 @@
 
 #define STREAM_NTIMES 20
 
-using val_t = Kokkos::complex<double>;
+using real_t = double;
+using val_t = Kokkos::complex<real_t>;
 constexpr val_t ainit(1.0, 0.1);
 constexpr val_t binit(1.1, 0.2);
 constexpr val_t cinit(1.3, 0.3);
