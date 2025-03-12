@@ -357,10 +357,10 @@ void perform_conj_matmul_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeF
           for(int c1 = 0; c1 < Nc; ++c1){
             #pragma unroll
             for(int c2 = 0; c2 < Nc; ++c2){
-              tmp = conj(b.view(i,j,k,l,mu,0,c1)) * c.view(i,j,k,l,mu,0,c2);
+              tmp = Kokkos::conj(b.view(i,j,k,l,mu,0,c1)) * c.view(i,j,k,l,mu,0,c2);
               #pragma unroll
               for(int ci = 1; ci < Nc; ++ci){
-                tmp += conj(b.view(i,j,k,l,mu,ci,c1)) * c.view(i,j,k,l,mu,ci,c2);
+                tmp += Kokkos::conj(b.view(i,j,k,l,mu,ci,c1)) * c.view(i,j,k,l,mu,ci,c2);
               }
               a.view(i,j,k,l,mu,c1,c2) = tmp;
             }
@@ -491,7 +491,7 @@ plaq_kernel(Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> & lmu,
   for(int c = 0; c < Nc; ++c){
     #pragma unroll
     for(int ci = 0; ci < Nc; ++ci){
-      lres += lmu[c][ci] * conj(lnu[c][ci]);
+      lres += lmu[c][ci] * Kokkos::conj(lnu[c][ci]);
     }
   }
 }
@@ -589,7 +589,7 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
             for(int c = 0; c < Nc; ++c){
               #pragma unroll
               for(int ci = 0; ci < Nc; ++ci){
-                lres += lmu[c][ci] * conj(lnu[c][ci]);
+                lres += lmu[c][ci] * Kokkos::conj(lnu[c][ci]);
               }
             }
           }
@@ -657,10 +657,10 @@ void perform_plaquette_notrace(const deviceSUNField<Nc> plaq_out, const deviceGa
             }
             #pragma unroll
             for(int c = 0; c < Nc; ++c){
-              tmu = lmu[c][0] * conj(lnu[c][0]);
+              tmu = lmu[c][0] * Kokkos::conj(lnu[c][0]);
               #pragma unroll
               for(int ci = 1; ci < Nc; ++ci){
-                tmu += lmu[c][ci] * conj(lnu[c][ci]);
+                tmu += lmu[c][ci] * Kokkos::conj(lnu[c][ci]);
               }
               // we sum up all the plaquettes since we are only interested
               // in the trace -> we do only the diagonal

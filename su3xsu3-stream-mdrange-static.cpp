@@ -344,7 +344,7 @@ void perform_conj_matmul_tmp(const deviceGaugeField<Nd,Nc> a, const deviceGaugeF
           for(int c1 = 0; c1 < Nc; ++c1){
             #pragma unroll
             for(int c2 = 0; c2 < Nc; ++c2){
-              tmp = conj(b.view[mu](i,j,k,l,0,c1)) * c.view[mu](i,j,k,l,0,c2);
+              tmp = Kokkos::conj(b.view[mu](i,j,k,l,0,c1)) * c.view[mu](i,j,k,l,0,c2);
               #pragma unroll
               for(int ci = 1; ci < Nc; ++ci){
                 tmp += b.view[mu](i,j,k,l,ci,c1) * c.view[mu](i,j,k,l,ci,c2);
@@ -482,7 +482,7 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g)
             for(int c = 0; c < Nc; ++c){
               #pragma unroll
               for(int ci = 0; ci < Nc; ++ci){
-                lres += lmu[c][ci] * conj(lnu[c][ci]);
+                lres += lmu[c][ci] * Kokkos::conj(lnu[c][ci]);
               }
             }
           }

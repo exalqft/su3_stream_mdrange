@@ -87,7 +87,7 @@ using Field =
     Kokkos::View<val_t****, Kokkos::MemoryTraits<Kokkos::Restrict>>;
 
 // template <int Nc>
-KOKKOS_FORCEINLINE_FUNCTION SUN<3> operator*(const SUN<3> a, const SUN<3> b) {
+KOKKOS_FORCEINLINE_FUNCTION SUN<3> operator*(const SUN<3> & a, const SUN<3> & b) {
   SUN<3> out;
   #pragma unroll
   for(int c1 = 0; c1 < 3; ++c1){
@@ -103,7 +103,7 @@ KOKKOS_FORCEINLINE_FUNCTION SUN<3> operator*(const SUN<3> a, const SUN<3> b) {
   return out;
 }
 
-KOKKOS_FORCEINLINE_FUNCTION SUN<3> conj(const SUN<3> a) {
+KOKKOS_FORCEINLINE_FUNCTION SUN<3> conj(const SUN<3> & a) {
   SUN<3> out;
   #pragma unroll
   for(int c1 = 0; c1 < 3; ++c1){
@@ -461,7 +461,7 @@ plaq_kernel(SUN<Nc> & lmu,
   for(int c = 0; c < Nc; ++c){
     #pragma unroll
     for(int ci = 0; ci < Nc; ++ci){
-      lres += lmu[c][ci] * conj(lnu[c][ci]);
+      lres += lmu[c][ci] * Kokkos::conj(lnu[c][ci]);
     }
   }
 }
@@ -542,7 +542,7 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
             for(int c = 0; c < Nc; ++c){
               #pragma unroll
               for(int ci = 0; ci < Nc; ++ci){
-                lres += lmu[c][ci] * conj(lnu[c][ci]);
+                lres += lmu[c][ci] * Kokkos::conj(lnu[c][ci]);
               }
             }
           }
@@ -597,7 +597,7 @@ void perform_plaquette_notrace(const deviceField plaq_out, const deviceGaugeFiel
             for(int c = 0; c < Nc; ++c){
               #pragma unroll
               for(int ci = 0; ci < Nc; ++ci){
-                tmu += lmu[c][ci] * conj(lnu[c][ci]);
+                tmu += lmu[c][ci] * Kokkos::conj(lnu[c][ci]);
               }
             }
             // we sum up all the plaquettes since we are only interested
