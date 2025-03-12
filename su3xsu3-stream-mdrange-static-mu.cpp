@@ -520,12 +520,12 @@ val_t perform_plaquette_kernel(const deviceGaugeField<Nd,Nc> g_in)
 
       val_t tmu, tnu;
 
-      if constexpr (Nd > 1) plaq_kernel<Nd,Nc,0,1>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if constexpr (Nd > 2) plaq_kernel<Nd,Nc,0,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if constexpr (Nd > 3) plaq_kernel<Nd,Nc,0,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if constexpr (Nd > 2) plaq_kernel<Nd,Nc,1,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if constexpr (Nd > 3) plaq_kernel<Nd,Nc,1,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
-      if constexpr (Nd > 3) plaq_kernel<Nd,Nc,2,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if (Nd > 1) plaq_kernel<Nd,Nc,0,1>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if (Nd > 2) plaq_kernel<Nd,Nc,0,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if (Nd > 3) plaq_kernel<Nd,Nc,0,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if (Nd > 2) plaq_kernel<Nd,Nc,1,2>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if (Nd > 3) plaq_kernel<Nd,Nc,1,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
+      if (Nd > 3) plaq_kernel<Nd,Nc,2,3>(lmu, lnu, g, i, j, k, l, lres, tmu, tnu, stream_array_size);
 
     }, Kokkos::Sum<val_t>(res) );
   Kokkos::fence();
