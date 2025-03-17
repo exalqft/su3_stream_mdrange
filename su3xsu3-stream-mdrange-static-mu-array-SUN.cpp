@@ -864,7 +864,7 @@ int run_benchmark(const StreamIndex stream_array_size) {
 
   // the Trace only reads the diagonal elements of the input SUN Field
   printf("Plaquette Trace         %11.4f GB/s %11.4e s\n",
-                   1.0e-09 * (1.0/3.0) * (double)sizeof(val_t) * suN_nelem / plaquetteTraceTime,
+                   1.0e-09 * (double)sizeof(val_t) * nelem / plaquetteTraceTime,
                    plaquetteTraceTime);
 
   // NotraceTrace = "Plaquette Notrace + Plaquette Trace" -> only writes and reads the diagonal elements
