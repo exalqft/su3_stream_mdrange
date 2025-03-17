@@ -86,16 +86,16 @@ using SUNField =
 using Field =
     Kokkos::View<val_t****, Kokkos::MemoryTraits<Kokkos::Restrict>>;
 
-// template <int Nc>
-KOKKOS_FORCEINLINE_FUNCTION SUN<3> operator*(const SUN<3> & a, const SUN<3> & b) {
-  SUN<3> out;
+template <size_t Nc>
+KOKKOS_FORCEINLINE_FUNCTION SUN<Nc> operator*(const SUN<Nc> & a, const SUN<Nc> & b) {
+  SUN<Nc> out;
   #pragma unroll
-  for(int c1 = 0; c1 < 3; ++c1){
+  for(int c1 = 0; c1 < Nc; ++c1){
     #pragma unroll
-    for(int c2 = 0; c2 < 3; ++c2){
+    for(int c2 = 0; c2 < Nc; ++c2){
       out[c1][c2] = a[c1][0] * b[0][c2];
       #pragma unroll
-      for(int ci = 1; ci < 3; ++ci){
+      for(int ci = 1; ci < Nc; ++ci){
         out[c1][c2] += a[c1][ci] * b[ci][c2];
       }
     }
@@ -103,12 +103,13 @@ KOKKOS_FORCEINLINE_FUNCTION SUN<3> operator*(const SUN<3> & a, const SUN<3> & b)
   return out;
 }
 
-KOKKOS_FORCEINLINE_FUNCTION SUN<3> conj(const SUN<3> & a) {
-  SUN<3> out;
+template <size_t Nc>
+KOKKOS_FORCEINLINE_FUNCTION SUN<Nc> conj(const SUN<Nc> & a) {
+  SUN<Nc> out;
   #pragma unroll
-  for(int c1 = 0; c1 < 3; ++c1){
+  for(int c1 = 0; c1 < Nc; ++c1){
     #pragma unroll
-    for(int c2 = 0; c2 < 3; ++c2){
+    for(int c2 = 0; c2 < Nc; ++c2){
       out[c1][c2] = Kokkos::conj(a[c2][c1]);
     }
   }
