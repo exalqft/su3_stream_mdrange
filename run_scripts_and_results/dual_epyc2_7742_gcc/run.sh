@@ -17,24 +17,30 @@ do
   for n in ${n_vals[@]};
   do
 
+    results=( $(${BUILDDIR}/dual_epyc2_7742_gcc/su3xsu3-stream-mdrange-static -n ${n} | grep GB/s | awk '{print $1 " " $2 " " $3}') )
+    for i in $(seq 0 5);
+    do
+      echo ${nt} ${n} "mu-external" ${results[3*i]} ${results[3*i+1]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
+    done
+
     results=( $(${BUILDDIR}/dual_epyc2_7742_gcc/su3xsu3-stream-mdrange-static-mu -n ${n} | grep GB/s | awk '{print $1 " " $2 " " $3}') )
     for i in $(seq 0 5);
     do
-      echo ${nt} ${n} "internal" ${results[3*i]} ${results[3*i+1]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
+      echo ${nt} ${n} "SUN-internal" ${results[3*i]} ${results[3*i+1]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
     done
     for i in $(seq 6 9);
     do
-      echo ${nt} ${n} "internal" ${results[3*i]}_${results[3*i+1]} ${results[3*i+2]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
+      echo ${nt} ${n} "SUN-internal" ${results[3*i]}-${results[3*i+1]} ${results[3*i+2]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
     done
 
     results=( $(${BUILDDIR}/dual_epyc2_7742_gcc/su3xsu3-stream-mdrange-static-mu-array-SUN -n ${n} | grep GB/s | awk '{print $1 " " $2 " " $3}') )
     for i in $(seq 0 3);
     do
-      echo ${nt} ${n} "array" ${results[3*i]} ${results[3*i+1]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
+      echo ${nt} ${n} "SUN-array" ${results[3*i]} ${results[3*i+1]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
     done
     for i in $(seq 4 7);
     do
-      echo ${nt} ${n} "array" ${results[3*i]}_${results[3*i+1]} ${results[3*i+2]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
+      echo ${nt} ${n} "SUN-array" ${results[3*i]}-${results[3*i+1]} ${results[3*i+2]} >> ${SRCDIR}/run_scripts_and_results/dual_epyc2_7742_gcc/results.dat
     done
     
   done
