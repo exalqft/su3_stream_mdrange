@@ -859,7 +859,7 @@ int run_benchmark(const StreamIndex stream_array_size) {
   // the Notrace plaquette kernel only writes the diagonal elements
   // of the output SUNField
   printf("Plaquette Notrace       %11.4f GB/s %11.4e s\n",
-            1.0e-09 * (4.0 + 1.0/3.0) * (double)sizeof(val_t) * suN_nelem / plaquetteNotraceTime,
+            1.0e-09 * (4.0 + 1.0/9.0) * (double)sizeof(val_t) * suN_nelem / plaquetteNotraceTime,
             plaquetteNotraceTime);
 
   // the Trace only reads the diagonal elements of the input SUN Field
@@ -869,7 +869,7 @@ int run_benchmark(const StreamIndex stream_array_size) {
 
   // NotraceTrace = "Plaquette Notrace + Plaquette Trace" -> only writes and reads the diagonal elements
   printf("Plaquette NotraceTrace  %11.4f GB/s %11.4e s\n",
-                          1.0e-09 * (4.0 + 2.0/3.0) * (double)sizeof(val_t) * suN_nelem / plaquetteNotraceTraceTime,
+                          1.0e-09 * (4.0 + 2.0/9.0) * (double)sizeof(val_t) * suN_nelem / plaquetteNotraceTraceTime,
                           plaquetteNotraceTraceTime);                 
 
   printf("\n"
