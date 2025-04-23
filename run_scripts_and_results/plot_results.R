@@ -3,7 +3,7 @@ require(dplyr)
 require(ggplot2)
 
 archs <- c("dual_epyc2_7742_gcc",
-           "nvidia_a100")
+           "nvidia_a100", "amd_mi250")
 
 bws <- data.frame(bw=c(204.8, 2*204.8,
                        1555, 1600),
@@ -12,7 +12,7 @@ bws <- data.frame(bw=c(204.8, 2*204.8,
                   architecture=c("dual_epyc2_7742_gcc", "dual_epyc2_7742_gcc",
                                  "nvidia_a100", "amd_mi250"),
                   nt=c(64, 128,
-                       32, 32))
+                       32, 7))
 
 tikzfiles <- hadron::tikz.init("su3_stream_mdrange", width=12, height=6)
 
