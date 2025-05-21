@@ -7,7 +7,7 @@ archs <- c("dual_epyc2_7742_gcc",
 
 bws <- data.frame(bw=c(204.8, 2*204.8,
                        1555),
-                  ylim=c(600, 600,
+                  ylim=c(1200, 1200,
                          1600),
                   architecture=c("dual_epyc2_7742_gcc", "dual_epyc2_7742_gcc",
                                  "nvidia_a100"),
