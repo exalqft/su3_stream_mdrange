@@ -751,6 +751,91 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_fiel
 }
 
 template <idx_t Nd, idx_t Nc>
+double perform_plaquette_wreduce(deviceGaugeField<Nd, Nc> g)
+{
+    using mref_t = MatrixRef<Nd, Nc>;
+    using m_t = Matrix<Nc>;
+
+    double plaquette;
+
+    const idx_t nsites = g.view.extent(0);
+
+    geometry geom(g.m_n);
+
+    Kokkos::parallel_reduce(
+        "plaquette_kernel",
+        nsites,
+        KOKKOS_LAMBDA(const idx_t i, double& lplaq) {
+            const Kokkos::Array<idx_t, 4> coords = geom.get_coords(i);
+            const idx_t ip0 = geom.s0(coords, 1);
+            const idx_t ip1 = geom.s1(coords, 1);
+            const idx_t ip2 = geom.s2(coords, 1);
+            const idx_t ip3 = geom.s3(coords, 1);
+
+            m_t tmp, lmu, lnu;
+
+            // 0 1
+            mref_t Umu(i, 0, g);
+            mref_t Umunu(ip0, 1, g);
+            mref_t Unu(i, 1, g);
+            mref_t Unumu(ip1, 0, g);
+            lmu = Umu * Umunu;
+            lnu = Unu * Unumu;
+            tmp = lmu * conj(lnu);
+            lplaq += ReTr(tmp);
+
+            // 0 2
+            Umunu.set_idcs(ip0, 2);
+            Unu.set_mu(2);
+            Unumu.set_idcs(ip2, 0);
+            lmu = Umu * Umunu;
+            lnu = Unu * Unumu;
+            tmp = lmu * conj(lnu);
+            lplaq += ReTr(tmp);
+
+            // 1 2
+            Umu.set_mu(1);
+            Umunu.set_idcs(ip1, 2);
+            Unumu.set_idcs(ip2, 1);
+            lmu = Umu * Umunu;
+            lnu = Unu * Unumu;
+            tmp = lmu * conj(lnu);
+            lplaq += ReTr(tmp);
+
+            // 0 3
+            Umu.set_mu(0);
+            Unu.set_mu(3);
+            Umunu.set_idcs(ip0, 3);
+            Unumu.set_idcs(ip3, 0);
+            lmu = Umu * Umunu;
+            lnu = Unu * Unumu;
+            tmp = lmu * conj(lnu);
+            lplaq += ReTr(tmp);
+
+            // 1 3
+            Umu.set_mu(1);
+            Umunu.set_idcs(ip2, 3);
+            Unumu.set_idcs(ip3, 1);
+            lmu = Umu * Umunu;
+            lnu = Unu * Unumu;
+            tmp = lmu * conj(lnu);
+            lplaq += ReTr(tmp);
+
+            // 2 3
+            Umu.set_mu(2);
+            Umunu.set_idcs(ip2, 3);
+            Unumu.set_idcs(ip3, 2);
+            lmu = Umu * Umunu;
+            lnu = Unu * Unumu;
+            tmp = lmu * conj(lnu);
+            lplaq += ReTr(tmp);
+        },
+        Kokkos::Sum<double>(plaquette));
+    Kokkos::fence();
+    return plaquette;
+}
+
+template <idx_t Nd, idx_t Nc>
 int run_benchmark(const idx_t Nx)
 {
     printf("Reports fastest timing per kernel\n");
@@ -778,6 +863,7 @@ int run_benchmark(const idx_t Nx)
     double matmulTime = std::numeric_limits<double>::max();
     double conjMatmulTime = std::numeric_limits<double>::max();
     double plaquetteTime = std::numeric_limits<double>::max();
+    double plaquetteWreduceTime = std::numeric_limits<double>::max();
 
     printf("Initializing Views...\n");
 
@@ -808,6 +894,12 @@ int run_benchmark(const idx_t Nx)
         plaquetteTime = std::min(plaquetteTime, timer.seconds());
     }
 
+    for (idx_t k = 0; k < STREAM_NTIMES; ++k) {
+        timer.reset();
+        double plaq = perform_plaquette_wreduce(dev_a);
+        plaquetteWreduceTime = std::min(plaquetteWreduceTime, timer.seconds());
+    }
+
     int rc = 0;
 
     printf(HLINE);
@@ -822,13 +914,22 @@ int run_benchmark(const idx_t Nx)
         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteTime,
         plaquetteTime);
 
+    printf("Plaquette (single loop) %11.4f GB/s %11.4e s\n",
+        1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteWreduceTime,
+        plaquetteWreduceTime);
+
     printf("\n"
            "Plaquette               %11.4f Gflop/s\n",
         1.0e-09 * nelem * 6.0 * // six plaquettes in 4D
-            ((2 * 9 * (18 + 4)) + // two su3 multiplications
-                (3 * (18 + 4)) + // one su3 multiplcation (diagonal elements only)
+            ((3 * 9 * (18 + 4)) + // three su3 multiplications
                 (3)) // trace accumulation (our plaquette is complex but we're interested only in the real part)
             / plaquetteTime);
+
+    printf("Plaquette (single loop) %11.4f Gflop/s\n",
+        1.0e-09 * nelem * 6.0 * // six plaquettes in 4D
+            ((3 * 9 * (18 + 4)) + // three su3 multiplications
+                (3)) // trace accumulation (our plaquette is complex but we're interested only in the real part)
+            / plaquetteWreduceTime);
 
     printf(HLINE);
 
