@@ -181,13 +181,11 @@ struct deviceGaugeField {
             KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
 #pragma unroll
                 for (int mu = 0; mu < Nd; ++mu) {
-                    mref_t m(i, j, k, l, mu, v);
 #pragma unroll
                     for (int c1 = 0; c1 < Nc; ++c1) {
 #pragma unroll
                         for (int c2 = 0; c2 < Nc; ++c2) {
-                            // v(i, j, k, l, mu, c1, c2) = init;
-                            m(c1, c2) = init;
+                            v(i, j, k, l, mu, c1, c2) = init;
                         }
                     }
                 }
@@ -257,7 +255,7 @@ struct MatrixRef {
     MatrixRef(const MatrixRef& other) = default;
 
     KOKKOS_FORCEINLINE_FUNCTION
-    MatrixRef(idx_t x, idx_t y, idx_t z, idx_t t, idx_t mu, const GaugeField<Nd, Nc>& g) noexcept
+    MatrixRef(idx_t x, idx_t y, idx_t z, idx_t t, idx_t mu, const deviceGaugeField<Nd, Nc>& g) noexcept
         : m_x(x)
         , m_y(y)
         , m_z(z)
@@ -347,7 +345,7 @@ struct MatrixRef {
     idx_t m_y;
     idx_t m_z;
     idx_t m_t;
-    const GaugeField<Nd, Nc>& m_g;
+    const deviceGaugeField<Nd, Nc>& m_g;
 };
 
 template <int Nc>
@@ -642,9 +640,9 @@ void perform_matmul(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc> b,
         { 0, 0, 0, 0 },
         { stream_array_size, stream_array_size, stream_array_size, stream_array_size },
         KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
-            mref_t A(i, j, k, l, 0, a.view);
-            mref_t B(i, j, k, l, 0, b.view);
-            mref_t C(i, j, k, l, 0, c.view);
+            mref_t A(i, j, k, l, 0, a);
+            mref_t B(i, j, k, l, 0, b);
+            mref_t C(i, j, k, l, 0, c);
             // unrolling this loop leads to cudaErrorIllegalAddress even if instead of using
             // set_mu one instantiates different instances of A, B and C for each mu
             for (int mu = 0; mu < Nd; ++mu) {
@@ -672,9 +670,9 @@ void perform_conj_matmul_tmp(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc
         { 0, 0, 0, 0 },
         { stream_array_size, stream_array_size, stream_array_size, stream_array_size },
         KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
-            mref_t A(i, j, k, l, 0, a.view);
-            mref_t B(i, j, k, l, 0, b.view);
-            mref_t C(i, j, k, l, 0, c.view);
+            mref_t A(i, j, k, l, 0, a);
+            mref_t B(i, j, k, l, 0, b);
+            mref_t C(i, j, k, l, 0, c);
             // unrolling this loop leads to cudaErrorIllegalAddress even if instead of using
             // set_mu one instantiates different instances of A, B and C for each mu
             for (int mu = 0; mu < Nd; ++mu) {
@@ -707,7 +705,7 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_fiel
     tune_and_launch_for<4>(
         "plaquette_kernel",
         { 0, 0, 0, 0 },
-        { stream_array_size, stream_array_size, stream_array_size, stream_array_size },
+        { N0, N1, N2, N3 },
         KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
             idx_t ip = (i + 1) % N0;
             idx_t jp = (j + 1) % N1;
@@ -717,10 +715,10 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_fiel
             m_t tmp, lmu, lnu;
 
             // 0 1
-            mref_t Umu(i, j, k, l, 0, g.view);
-            mref_t Umunu(ip, j, k, l, 1, g.view);
-            mref_t Unu(i, j, k, l, 1, g.view);
-            mref_t Unumu(i, jp, k, l, 0, g.view);
+            mref_t Umu(i, j, k, l, 0, g);
+            mref_t Umunu(ip, j, k, l, 1, g);
+            mref_t Unu(i, j, k, l, 1, g);
+            mref_t Unumu(i, jp, k, l, 0, g);
             lmu = Umu * Umunu;
             lnu = Unu * Unumu;
             tmp = lmu * conj(lnu);
@@ -776,7 +774,7 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_fiel
     // FIXME: this should also be auto-tuned but for that we need support for reductions in the tuner
     Kokkos::parallel_reduce(
         "plaquette reduction",
-        Policy<4>({ 0, 0, 0, 0 }, { stream_array_size, stream_array_size, stream_array_size, stream_array_size }, tiling),
+        Policy<4>({ 0, 0, 0, 0 }, { N0, N1, N2, N3 }, tiling),
         KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l, double& lplaq) { lplaq += plaq_field(i, j, k, l); },
         Kokkos::Sum<double>(plaquette));
     Kokkos::fence();
