@@ -29,3 +29,6 @@ target_link_libraries(su3xsu3-stream-mdrange-static-mu-array-SUN Kokkos::kokkos)
 
 add_executable(su3xsu3-stream-mdrange-static-mu-reftype su3xsu3-stream-mdrange-static-mu-reftype.cpp)
 target_link_libraries(su3xsu3-stream-mdrange-static-mu-reftype Kokkos::kokkos)
+
+add_executable(su3xsu3-stream-1drange-static-mu-reftype su3xsu3-stream-1drange-static-mu-reftype.cpp)
+target_link_libraries(su3xsu3-stream-1drange-static-mu-reftype Kokkos::kokkos)
