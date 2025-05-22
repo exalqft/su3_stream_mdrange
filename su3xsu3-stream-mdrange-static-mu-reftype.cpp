@@ -101,6 +101,9 @@ using idx_t = int;
 template <int Nc>
 struct Matrix;
 
+template <int Nd, int Nc>
+struct MatrixRef;
+
 template <int rank>
 using Policy = Kokkos::MDRangePolicy<Kokkos::Rank<rank>>;
 
@@ -162,6 +165,7 @@ struct deviceGaugeField {
     void
     do_init(idx_t n0, idx_t n1, idx_t n2, idx_t n3, val_t init)
     {
+        using mref_t = MatrixRef<Nd, Nc>;
         Kokkos::realloc(Kokkos::WithoutInitializing, view, n0, n1, n2, n3);
 
         // need a local copy of the view to have it captured below since this is a host function
@@ -170,18 +174,31 @@ struct deviceGaugeField {
         const auto vconst = v;
         constexpr auto rank = vconst.rank_dynamic();
 
-        tune_and_launch_for<4>("init-GaugeField", { 0, 0, 0, 0 }, { n0, n1, n2, n3 }, KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
+        tune_and_launch_for<4>(
+            "init-GaugeField",
+            { 0, 0, 0, 0 },
+            { n0, n1, n2, n3 },
+            KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
 #pragma unroll
-            for (int mu = 0; mu < Nd; ++mu) {
+                for (int mu = 0; mu < Nd; ++mu) {
+                    mref_t m(i, j, k, l, mu, v);
 #pragma unroll
-                for (int c1 = 0; c1 < Nc; ++c1) {
+                    for (int c1 = 0; c1 < Nc; ++c1) {
 #pragma unroll
-                    for (int c2 = 0; c2 < Nc; ++c2) {
-                        v(i, j, k, l, mu, c1, c2) = init;
+                        for (int c2 = 0; c2 < Nc; ++c2) {
+                            // v(i, j, k, l, mu, c1, c2) = init;
+                            m(c1, c2) = init;
+                        }
                     }
                 }
-            } });
+            });
         Kokkos::fence();
+    }
+
+    KOKKOS_FORCEINLINE_FUNCTION auto&
+    operator()(idx_t i, idx_t j, idx_t k, idx_t l, idx_t mu, idx_t c1, idx_t c2) noexcept
+    {
+        return view(i, j, k, l, mu, c1, c2);
     }
 
     KOKKOS_FORCEINLINE_FUNCTION auto&
@@ -219,6 +236,13 @@ struct deviceDoubleField {
 
     KOKKOS_FORCEINLINE_FUNCTION
     auto&
+    operator()(idx_t i, idx_t j, idx_t k, idx_t l) noexcept
+    {
+        return view(i, j, k, l);
+    }
+
+    KOKKOS_FORCEINLINE_FUNCTION
+    auto&
     operator()(idx_t i, idx_t j, idx_t k, idx_t l) const noexcept
     {
         return view(i, j, k, l);
@@ -233,7 +257,7 @@ struct MatrixRef {
     MatrixRef(const MatrixRef& other) = default;
 
     KOKKOS_FORCEINLINE_FUNCTION
-    constexpr MatrixRef(idx_t x, idx_t y, idx_t z, idx_t t, idx_t mu, const deviceGaugeField<Nd, Nc>& g) noexcept
+    MatrixRef(idx_t x, idx_t y, idx_t z, idx_t t, idx_t mu, const GaugeField<Nd, Nc>& g) noexcept
         : m_x(x)
         , m_y(y)
         , m_z(z)
@@ -251,10 +275,12 @@ struct MatrixRef {
     }
 
     KOKKOS_FORCEINLINE_FUNCTION
-    MatrixRef&
-    operator=(const MatrixRef& other) noexcept
+    auto&
+    operator=(const MatrixRef& other) const noexcept
     {
+#pragma unroll
         for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
             for (idx_t c2 = 0; c2 < Nc; ++c2) {
                 (*this)(c1, c2) = other(c1, c2);
             }
@@ -263,10 +289,12 @@ struct MatrixRef {
     }
 
     KOKKOS_FORCEINLINE_FUNCTION
-    MatrixRef&
-    operator=(const Matrix<Nc>& other) noexcept
+    auto&
+    operator=(const Matrix<Nc>& other) const noexcept
     {
+#pragma unroll
         for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
             for (idx_t c2 = 0; c2 < Nc; ++c2) {
                 (*this)(c1, c2) = other(c1, c2);
             }
@@ -319,7 +347,7 @@ struct MatrixRef {
     idx_t m_y;
     idx_t m_z;
     idx_t m_t;
-    const deviceGaugeField<Nd, Nc>& m_g;
+    const GaugeField<Nd, Nc>& m_g;
 };
 
 template <int Nc>
@@ -341,10 +369,12 @@ struct Matrix : public Kokkos::Array<Kokkos::Array<val_t, size_t(Nc)>, size_t(Nc
     }
 
     template <int Nd>
-    KOKKOS_FORCEINLINE_FUNCTION Matrix&
+    KOKKOS_FORCEINLINE_FUNCTION auto&
     operator=(const MatrixRef<Nd, Nc>& rhs) noexcept
     {
+#pragma unroll
         for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
             for (idx_t c2 = 0; c2 < Nc; ++c2) {
                 (*this)(c1, c2) = rhs(c1, c2);
             }
@@ -353,10 +383,12 @@ struct Matrix : public Kokkos::Array<Kokkos::Array<val_t, size_t(Nc)>, size_t(Nc
     }
 
     KOKKOS_FORCEINLINE_FUNCTION
-    Matrix&
+    auto&
     operator=(const Matrix& other) noexcept
     {
+#pragma unroll
         for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
             for (idx_t c2 = 0; c2 < Nc; ++c2) {
                 (*this)(c1, c2) = other(c1, c2);
             }
@@ -371,7 +403,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     conj(const MatrixRef<Nd, Nc>& m) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = Kokkos::conj(m(c2, c1));
         }
@@ -385,7 +419,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     conj(const Matrix<Nc>& m) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = Kokkos::conj(m(c2, c1));
         }
@@ -399,9 +435,12 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator*(const MatrixRef<Nd, Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, 0) * rhs(0, c2);
+#pragma unroll
             for (idx_t c3 = 1; c3 < Nc; ++c3) {
                 out(c1, c2) += lhs(c1, c3) * rhs(c3, c2);
             }
@@ -416,7 +455,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator+(const MatrixRef<Nd, Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, c2) + rhs(c1, c2);
         }
@@ -430,7 +471,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator-(const MatrixRef<Nd, Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, c2) - rhs(c1, c2);
         }
@@ -444,9 +487,12 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator*(const MatrixRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, 0) * rhs(0, c2);
+#pragma unroll
             for (idx_t c3 = 1; c3 < Nc; ++c3) {
                 out(c1, c2) += lhs(c1, c3) * rhs(c3, c2);
             }
@@ -461,7 +507,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator+(const MatrixRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, c2) + rhs(c1, c2);
         }
@@ -475,7 +523,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator-(const MatrixRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, c2) - rhs(c1, c2);
         }
@@ -489,9 +539,12 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator*(const Matrix<Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, 0) * rhs(0, c2);
+#pragma unroll
             for (idx_t c3 = 1; c3 < Nc; ++c3) {
                 out(c1, c2) += lhs(c1, c3) * rhs(c3, c2);
             }
@@ -506,9 +559,12 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator*(const Matrix<Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, 0) * rhs(0, c2);
+#pragma unroll
             for (idx_t c3 = 1; c3 < Nc; ++c3) {
                 out(c1, c2) += lhs(c1, c3) * rhs(c3, c2);
             }
@@ -523,7 +579,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator+(const Matrix<Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, c2) + rhs(c1, c2);
         }
@@ -537,7 +595,9 @@ KOKKOS_FORCEINLINE_FUNCTION
     operator-(const Matrix<Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
+#pragma unroll
     for (idx_t c1 = 0; c1 < Nc; ++c1) {
+#pragma unroll
         for (idx_t c2 = 0; c2 < Nc; ++c2) {
             out(c1, c2) = lhs(c1, c2) - rhs(c1, c2);
         }
@@ -549,6 +609,7 @@ template <int Nc>
 KOKKOS_FORCEINLINE_FUNCTION double ReTr(const Matrix<Nc>& m) noexcept
 {
     double rval = 0.0;
+#pragma unroll
     for (idx_t c = 0; c < Nc; ++c) {
         rval += m(c, c).real();
     }
@@ -559,50 +620,11 @@ template <int Nd, int Nc>
 KOKKOS_FORCEINLINE_FUNCTION double ReTr(const MatrixRef<Nd, Nc>& m) noexcept
 {
     double rval = 0.0;
+#pragma unroll
     for (idx_t c = 0; c < Nc; ++c) {
         rval += m(c, c).real();
     }
     return rval;
-}
-
-int parse_args(int argc, char** argv, idx_t& stream_array_size)
-{
-    // Defaults
-    stream_array_size = 32;
-
-    const std::string help_string = "  -n <N>, --nelements <N>\n"
-                                    "     Create stream views containing [4][Nc][Nc]<N>^4 elements.\n"
-                                    "     Default: 32\n"
-                                    "  -h, --help\n"
-                                    "     Prints this message.\n"
-                                    "     Hint: use --kokkos-help to see command line options provided by "
-                                    "Kokkos.\n";
-
-    static struct option long_options[] = {
-        { "nelements", required_argument, NULL, 'n' },
-        { "help", no_argument, NULL, 'h' },
-        { NULL, 0, NULL, 0 }
-    };
-
-    int c;
-    int option_index = 0;
-    while ((c = getopt_long(argc, argv, "n:h", long_options, &option_index)) != -1)
-        switch (c) {
-        case 'n':
-            stream_array_size = atoi(optarg);
-            break;
-        case 'h':
-            printf("%s", help_string.c_str());
-            return -2;
-            break;
-        case 0:
-            break;
-        default:
-            printf("%s", help_string.c_str());
-            return -1;
-            break;
-        }
-    return 0;
 }
 
 template <int Nd, int Nc>
@@ -620,10 +642,11 @@ void perform_matmul(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc> b,
         { 0, 0, 0, 0 },
         { stream_array_size, stream_array_size, stream_array_size, stream_array_size },
         KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
-            mref_t A(i, j, k, l, 0, a);
-            mref_t B(i, j, k, l, 0, b);
-            mref_t C(i, j, k, l, 0, c);
-#pragma unroll
+            mref_t A(i, j, k, l, 0, a.view);
+            mref_t B(i, j, k, l, 0, b.view);
+            mref_t C(i, j, k, l, 0, c.view);
+            // unrolling this loop leads to cudaErrorIllegalAddress even if instead of using
+            // set_mu one instantiates different instances of A, B and C for each mu
             for (int mu = 0; mu < Nd; ++mu) {
                 A.set_mu(mu);
                 B.set_mu(mu);
@@ -644,15 +667,16 @@ void perform_conj_matmul_tmp(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc
     constexpr auto rank = a.view.rank_dynamic();
     const idx_t stream_array_size = a.view.extent_int(0);
     const auto tiling = get_tiling(a.view);
-    tune_and_launch_for<4>(
+    tune_and_launch_for<rank>(
         "conjsu3xsu3",
         { 0, 0, 0, 0 },
         { stream_array_size, stream_array_size, stream_array_size, stream_array_size },
         KOKKOS_LAMBDA(const idx_t i, const idx_t j, const idx_t k, const idx_t l) {
-            mref_t A(i, j, k, l, 0, a);
-            mref_t B(i, j, k, l, 0, b);
-            mref_t C(i, j, k, l, 0, c);
-#pragma unroll
+            mref_t A(i, j, k, l, 0, a.view);
+            mref_t B(i, j, k, l, 0, b.view);
+            mref_t C(i, j, k, l, 0, c.view);
+            // unrolling this loop leads to cudaErrorIllegalAddress even if instead of using
+            // set_mu one instantiates different instances of A, B and C for each mu
             for (int mu = 0; mu < Nd; ++mu) {
                 A.set_mu(mu);
                 B.set_mu(mu);
@@ -665,7 +689,7 @@ void perform_conj_matmul_tmp(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc
 }
 
 template <int Nd, int Nc>
-double perform_plaquette(deviceGaugeField<Nd, Nc> g)
+double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_field)
 {
     using mref_t = MatrixRef<Nd, Nc>;
     using m_t = Matrix<Nc>;
@@ -674,7 +698,6 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g)
     const auto tiling = get_tiling(g.view);
 
     double plaquette;
-    deviceDoubleField plaq_field(g.view.extent(0), g.view.extent(2), g.view.extent(2), g.view.extent(3), 0.0);
 
     const idx_t N0 = g.view.extent_int(0);
     const idx_t N1 = g.view.extent_int(1);
@@ -694,10 +717,10 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g)
             m_t tmp, lmu, lnu;
 
             // 0 1
-            mref_t Umu(i, j, k, l, 0, g);
-            mref_t Umunu(ip, j, k, l, 1, g);
-            mref_t Unu(i, j, k, l, 1, g);
-            mref_t Unumu(i, jp, k, l, 0, g);
+            mref_t Umu(i, j, k, l, 0, g.view);
+            mref_t Umunu(ip, j, k, l, 1, g.view);
+            mref_t Unu(i, j, k, l, 1, g.view);
+            mref_t Unumu(i, jp, k, l, 0, g.view);
             lmu = Umu * Umunu;
             lnu = Unu * Unumu;
             tmp = lmu * conj(lnu);
@@ -795,6 +818,7 @@ int run_benchmark(const idx_t stream_array_size)
     deviceGaugeField<Nd, Nc> dev_a(stream_array_size, stream_array_size, stream_array_size, stream_array_size, ainit);
     deviceGaugeField<Nd, Nc> dev_b(stream_array_size, stream_array_size, stream_array_size, stream_array_size, binit);
     deviceGaugeField<Nd, Nc> dev_c(stream_array_size, stream_array_size, stream_array_size, stream_array_size, cinit);
+    deviceDoubleField plaq_field(stream_array_size, stream_array_size, stream_array_size, stream_array_size, 0.0);
 
     printf("Starting benchmarking...\n");
 
@@ -814,7 +838,7 @@ int run_benchmark(const idx_t stream_array_size)
 
     for (idx_t k = 0; k < STREAM_NTIMES; ++k) {
         timer.reset();
-        double plaq = perform_plaquette(dev_b);
+        double plaq = perform_plaquette(dev_b, plaq_field);
         plaquetteTime = std::min(plaquetteTime, timer.seconds());
     }
 
@@ -843,6 +867,46 @@ int run_benchmark(const idx_t stream_array_size)
     printf(HLINE);
 
     return rc;
+}
+
+int parse_args(int argc, char** argv, idx_t& stream_array_size)
+{
+    // Defaults
+    stream_array_size = 32;
+
+    const std::string help_string = "  -n <N>, --nelements <N>\n"
+                                    "     Create stream views containing [4][Nc][Nc]<N>^4 elements.\n"
+                                    "     Default: 32\n"
+                                    "  -h, --help\n"
+                                    "     Prints this message.\n"
+                                    "     Hint: use --kokkos-help to see command line options provided by "
+                                    "Kokkos.\n";
+
+    static struct option long_options[] = {
+        { "nelements", required_argument, NULL, 'n' },
+        { "help", no_argument, NULL, 'h' },
+        { NULL, 0, NULL, 0 }
+    };
+
+    int c;
+    int option_index = 0;
+    while ((c = getopt_long(argc, argv, "n:h", long_options, &option_index)) != -1)
+        switch (c) {
+        case 'n':
+            stream_array_size = atoi(optarg);
+            break;
+        case 'h':
+            printf("%s", help_string.c_str());
+            return -2;
+            break;
+        case 0:
+            break;
+        default:
+            printf("%s", help_string.c_str());
+            return -1;
+            break;
+        }
+    return 0;
 }
 
 int main(int argc, char* argv[])
