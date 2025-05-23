@@ -91,7 +91,7 @@ template <idx_t Nc>
 struct Matrix;
 
 template <idx_t Nd, idx_t Nc>
-struct MatrixRef;
+struct GaugeRef;
 
 template <idx_t Nd, idx_t Nc>
 struct deviceGaugeField {
@@ -185,12 +185,12 @@ struct deviceDoubleField {
 };
 
 template <idx_t Nd, idx_t Nc>
-struct MatrixRef {
-    MatrixRef() = delete;
-    MatrixRef(const MatrixRef& other) = default;
+struct GaugeRef {
+    GaugeRef() = delete;
+    GaugeRef(const GaugeRef& other) = default;
 
     KOKKOS_FORCEINLINE_FUNCTION
-    MatrixRef(idx_t i, idx_t mu, const deviceGaugeField<Nd, Nc>& g) noexcept
+    GaugeRef(idx_t i, idx_t mu, const deviceGaugeField<Nd, Nc>& g) noexcept
         : m_i(i)
         , m_mu(mu)
         , m_g(g)
@@ -206,7 +206,7 @@ struct MatrixRef {
 
     KOKKOS_FORCEINLINE_FUNCTION
     auto&
-    operator=(const MatrixRef& other) const noexcept
+    operator=(const GaugeRef& other) const noexcept
     {
 #pragma unroll
         for (idx_t c1 = 0; c1 < Nc; ++c1) {
@@ -273,7 +273,7 @@ struct Matrix : public Kokkos::Array<Kokkos::Array<val_t, size_t(Nc)>, size_t(Nc
 
     template <idx_t Nd>
     KOKKOS_FORCEINLINE_FUNCTION auto&
-    operator=(const MatrixRef<Nd, Nc>& rhs) noexcept
+    operator=(const GaugeRef<Nd, Nc>& rhs) noexcept
     {
 #pragma unroll
         for (idx_t c1 = 0; c1 < Nc; ++c1) {
@@ -303,7 +303,7 @@ struct Matrix : public Kokkos::Array<Kokkos::Array<val_t, size_t(Nc)>, size_t(Nc
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    conj(const MatrixRef<Nd, Nc>& m) noexcept
+    conj(const GaugeRef<Nd, Nc>& m) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -335,7 +335,7 @@ KOKKOS_FORCEINLINE_FUNCTION
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    operator*(const MatrixRef<Nd, Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
+    operator*(const GaugeRef<Nd, Nc>& lhs, const GaugeRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -355,7 +355,7 @@ KOKKOS_FORCEINLINE_FUNCTION
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    operator+(const MatrixRef<Nd, Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
+    operator+(const GaugeRef<Nd, Nc>& lhs, const GaugeRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -371,7 +371,7 @@ KOKKOS_FORCEINLINE_FUNCTION
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    operator-(const MatrixRef<Nd, Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
+    operator-(const GaugeRef<Nd, Nc>& lhs, const GaugeRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -387,7 +387,7 @@ KOKKOS_FORCEINLINE_FUNCTION
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    operator*(const MatrixRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
+    operator*(const GaugeRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -407,7 +407,7 @@ KOKKOS_FORCEINLINE_FUNCTION
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    operator+(const MatrixRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
+    operator+(const GaugeRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -423,7 +423,7 @@ KOKKOS_FORCEINLINE_FUNCTION
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    operator-(const MatrixRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
+    operator-(const GaugeRef<Nd, Nc>& lhs, const Matrix<Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -439,7 +439,7 @@ KOKKOS_FORCEINLINE_FUNCTION
 template <idx_t Nd, idx_t Nc>
 KOKKOS_FORCEINLINE_FUNCTION
     Matrix<Nc>
-    operator*(const Matrix<Nc>& lhs, const MatrixRef<Nd, Nc>& rhs) noexcept
+    operator*(const Matrix<Nc>& lhs, const GaugeRef<Nd, Nc>& rhs) noexcept
 {
     Matrix<Nc> out;
 #pragma unroll
@@ -520,7 +520,7 @@ KOKKOS_FORCEINLINE_FUNCTION double ReTr(const Matrix<Nc>& m) noexcept
 }
 
 template <idx_t Nd, idx_t Nc>
-KOKKOS_FORCEINLINE_FUNCTION double ReTr(const MatrixRef<Nd, Nc>& m) noexcept
+KOKKOS_FORCEINLINE_FUNCTION double ReTr(const GaugeRef<Nd, Nc>& m) noexcept
 {
     double rval = 0.0;
 #pragma unroll
@@ -609,7 +609,7 @@ template <idx_t Nd, idx_t Nc>
 void perform_matmul(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc> b,
     deviceGaugeField<Nd, Nc> c)
 {
-    using mref_t = MatrixRef<Nd, Nc>;
+    using mref_t = GaugeRef<Nd, Nc>;
     using m_t = Matrix<Nc>;
 
     tune_and_launch_for(
@@ -637,7 +637,7 @@ template <idx_t Nd, idx_t Nc>
 void perform_conj_matmul(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc> b,
     deviceGaugeField<Nd, Nc> c)
 {
-    using mref_t = MatrixRef<Nd, Nc>;
+    using mref_t = GaugeRef<Nd, Nc>;
     using m_t = Matrix<Nc>;
     tune_and_launch_for(
         "conjsu3xsu3",
@@ -663,7 +663,7 @@ void perform_conj_matmul(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc> b,
 template <idx_t Nd, idx_t Nc>
 double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_field)
 {
-    using mref_t = MatrixRef<Nd, Nc>;
+    using mref_t = GaugeRef<Nd, Nc>;
     using m_t = Matrix<Nc>;
 
     double plaquette;
@@ -755,7 +755,7 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_fiel
 template <idx_t Nd, idx_t Nc>
 double perform_plaquette_wreduce(deviceGaugeField<Nd, Nc> g)
 {
-    using mref_t = MatrixRef<Nd, Nc>;
+    using mref_t = GaugeRef<Nd, Nc>;
     using m_t = Matrix<Nc>;
 
     double plaquette;
