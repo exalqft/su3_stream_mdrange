@@ -58,7 +58,6 @@
 
 #define STREAM_NTIMES 20
 
-// using idx_t = size_t;
 using real_t = double;
 using val_t = Kokkos::complex<real_t>;
 constexpr val_t ainit(1.0, 0.1);
