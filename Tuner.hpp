@@ -15,7 +15,7 @@
 
 // define how many times the kernel is run to tune
 #ifndef TUNE_NTIMES
-#define TUNE_NTIMES 3
+#define TUNE_NTIMES 8
 #endif
 
 using idx_t = int;

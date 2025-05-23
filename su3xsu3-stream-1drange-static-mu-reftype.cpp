@@ -43,6 +43,8 @@
 //@HEADER
 */
 
+#include "Tuner1D.hpp"
+
 #include <Kokkos_Core.hpp>
 #include <cmath>
 #include <cstdio>
@@ -56,7 +58,7 @@
 
 #define STREAM_NTIMES 20
 
-using idx_t = size_t;
+// using idx_t = size_t;
 using real_t = double;
 using val_t = Kokkos::complex<real_t>;
 constexpr val_t ainit(1.0, 0.1);
@@ -113,8 +115,9 @@ struct deviceGaugeField {
 
         // need a local copy of the view to have it captured below since this is a host function
         auto v = view;
-        Kokkos::parallel_for(
+        tune_and_launch_for(
             "init-GaugeField",
+            0,
             n,
             KOKKOS_LAMBDA(const idx_t i) {
 #pragma unroll
@@ -162,7 +165,7 @@ struct deviceDoubleField {
         Kokkos::realloc(Kokkos::WithoutInitializing, view, n);
         // need a version of the view which can be captured since this is a host function
         auto v = view;
-        Kokkos::parallel_for("init-DoubleField", n, KOKKOS_LAMBDA(const idx_t i) { v(i) = init; });
+        tune_and_launch_for("init-DoubleField", 0, n, KOKKOS_LAMBDA(const idx_t i) { v(i) = init; });
         Kokkos::fence();
     }
 
@@ -613,8 +616,9 @@ void perform_matmul(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc> b,
     using mref_t = MatrixRef<Nd, Nc>;
     using m_t = Matrix<Nc>;
 
-    Kokkos::parallel_for(
+    tune_and_launch_for(
         "su3xsu3",
+        0,
         b.view.extent(0),
         KOKKOS_LAMBDA(const idx_t i) {
             mref_t A(i, 0, a);
@@ -639,8 +643,9 @@ void perform_conj_matmul(deviceGaugeField<Nd, Nc> a, deviceGaugeField<Nd, Nc> b,
 {
     using mref_t = MatrixRef<Nd, Nc>;
     using m_t = Matrix<Nc>;
-    Kokkos::parallel_for(
+    tune_and_launch_for(
         "conjsu3xsu3",
+        0,
         b.view.extent(0),
         KOKKOS_LAMBDA(const idx_t i) {
             mref_t A(i, 0, a);
@@ -671,8 +676,9 @@ double perform_plaquette(deviceGaugeField<Nd, Nc> g, deviceDoubleField plaq_fiel
 
     geometry geom(g.m_n);
 
-    Kokkos::parallel_for(
+    tune_and_launch_for(
         "plaquette_kernel",
+        0,
         nsites,
         KOKKOS_LAMBDA(const idx_t i) {
             const Kokkos::Array<idx_t, 4> coords = geom.get_coords(i);
@@ -762,6 +768,7 @@ double perform_plaquette_wreduce(deviceGaugeField<Nd, Nc> g)
 
     geometry geom(g.m_n);
 
+    // FIXME: this should also be auto-tuned but we need support for reductions in the tuner
     Kokkos::parallel_reduce(
         "plaquette_kernel",
         nsites,
@@ -914,7 +921,7 @@ int run_benchmark(const idx_t Nx)
         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteTime,
         plaquetteTime);
 
-    printf("Plaquette (single loop) %11.4f GB/s %11.4e s\n",
+    printf("Plaquette-SingleLoop    %11.4f GB/s %11.4e s\n",
         1.0e-09 * 1.0 * (double)sizeof(val_t) * gauge_nelem / plaquetteWreduceTime,
         plaquetteWreduceTime);
 
@@ -925,7 +932,7 @@ int run_benchmark(const idx_t Nx)
                 (3)) // trace accumulation (our plaquette is complex but we're interested only in the real part)
             / plaquetteTime);
 
-    printf("Plaquette (single loop) %11.4f Gflop/s\n",
+    printf("Plaquette-SingleLoop    %11.4f Gflop/s\n",
         1.0e-09 * nelem * 6.0 * // six plaquettes in 4D
             ((3 * 9 * (18 + 4)) + // three su3 multiplications
                 (3)) // trace accumulation (our plaquette is complex but we're interested only in the real part)
