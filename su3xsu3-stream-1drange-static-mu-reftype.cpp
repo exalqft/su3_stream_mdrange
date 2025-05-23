@@ -87,9 +87,6 @@ template <idx_t Nc>
 using constSUNField = Kokkos::View<const val_t* [Nc][Nc], Kokkos::MemoryTraits<Kokkos::Restrict>>;
 #endif
 
-template <idx_t Nd, idx_t Nc>
-using StreamHostArray = typename GaugeField<Nd, Nc>::HostMirror;
-
 // forward declaration
 template <idx_t Nc>
 struct Matrix;
@@ -770,7 +767,7 @@ double perform_plaquette_wreduce(deviceGaugeField<Nd, Nc> g)
 
     // FIXME: this should also be auto-tuned but we need support for reductions in the tuner
     Kokkos::parallel_reduce(
-        "plaquette_kernel",
+        "plaquette_kernel_wreduce",
         nsites,
         KOKKOS_LAMBDA(const idx_t i, double& lplaq) {
             const Kokkos::Array<idx_t, 4> coords = geom.get_coords(i);

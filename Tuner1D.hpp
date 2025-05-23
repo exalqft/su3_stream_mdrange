@@ -19,8 +19,8 @@
 #define TUNE_NTIMES 8
 #endif
 
-using idx_t = size_t;
-using chunk_t = int;
+using idx_t = int32_t;
+using chunk_t = int32_t;
 
 static constexpr const int verbosity = 2;
 static constexpr const bool perform_tuning = true;
@@ -84,7 +84,7 @@ void tune_and_launch_for(
 {
     // launch kernel if tuning is disabled
     if (!perform_tuning) {
-        Kokkos::RangePolicy policy(start, end);
+        Kokkos::RangePolicy<idx_t> policy(start, end);
         Kokkos::parallel_for(policy, functor);
         return;
     }
@@ -100,7 +100,7 @@ void tune_and_launch_for(
                 functor_uid.c_str(),
                 chunk_size);
         }
-        Kokkos::RangePolicy<> policy(start, end, Kokkos::ChunkSize { chunk_size });
+        Kokkos::RangePolicy<idx_t> policy(start, end, Kokkos::ChunkSize { chunk_size });
         Kokkos::parallel_for(policy, functor);
         return;
     }
@@ -108,7 +108,7 @@ void tune_and_launch_for(
         printf("Start tuning for kernel %s\n", functor_uid.c_str());
     }
     // if not tuned, tune the functor
-    Kokkos::RangePolicy<> policy(start, end);
+    Kokkos::RangePolicy<idx_t> policy(start, end);
     chunk_t best_chunk_size = 1;
     // timer for tuning
     Kokkos::Timer timer;
@@ -145,7 +145,7 @@ void tune_and_launch_for(
             if ((end - start) % cs != 0) {
                 continue;
             }
-            Kokkos::RangePolicy tune_policy(start, end, Kokkos::ChunkSize { cs });
+            Kokkos::RangePolicy<idx_t> tune_policy(start, end, Kokkos::ChunkSize { cs });
             double min_time = std::numeric_limits<double>::max();
             for (int i = 0; i < TUNE_NTIMES; ++i) {
                 timer.reset();
@@ -172,7 +172,7 @@ void tune_and_launch_for(
     tuning_hash_table.insert(functor_uid, best_chunk_size);
     if (verbosity > 3) {
         double time_rec = std::numeric_limits<double>::max();
-        Kokkos::RangePolicy tune_policy(start, end);
+        Kokkos::RangePolicy<idx_t> tune_policy(start, end);
         for (int ii = 0; ii < TUNE_NTIMES; ii++) {
             timer.reset();
             Kokkos::parallel_for(tune_policy, functor);
@@ -182,7 +182,7 @@ void tune_and_launch_for(
         printf("Time with default tile size: %11.4e s\n", time_rec);
         printf("Speedup: %f\n", time_rec / best_time);
     }
-    Kokkos::RangePolicy tune_policy(start, end, Kokkos::ChunkSize { best_chunk_size });
+    Kokkos::RangePolicy<idx_t> tune_policy(start, end, Kokkos::ChunkSize { best_chunk_size });
     Kokkos::parallel_for(tune_policy, functor);
     return;
 };
