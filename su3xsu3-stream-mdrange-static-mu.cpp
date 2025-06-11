@@ -499,7 +499,6 @@ plaq_kernel(Kokkos::Array<Kokkos::Array<val_t,Nc>,Nc> & lmu,
 template <int Nd, int Nc>
 val_t perform_plaquette_kernel(const deviceGaugeField<Nd,Nc> g_in)
 {
-  assert(mu < Nd && nu < Nd);
   constexpr auto rank = g_in.view.rank_dynamic();
   const auto stream_array_size = g_in.view.extent(0);
   const auto tiling = get_tiling(g_in.view);
@@ -535,7 +534,6 @@ val_t perform_plaquette_kernel(const deviceGaugeField<Nd,Nc> g_in)
 template <int Nd, int Nc>
 val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
 {
-  assert(mu < Nd && nu < Nd);
   constexpr auto rank = g_in.view.rank_dynamic();
   const auto stream_array_size = g_in.view.extent(0);
   const auto tiling = get_tiling(g_in.view);
@@ -603,7 +601,6 @@ val_t perform_plaquette(const deviceGaugeField<Nd,Nc> g_in)
 template <int Nd, int Nc>
 void perform_plaquette_notrace(const deviceSUNField<Nc> plaq_out, const deviceGaugeField<Nd,Nc> g_in)
 {
-  assert(mu < Nd && nu < Nd);
   constexpr auto rank = g_in.view.rank_dynamic();
   const auto stream_array_size = g_in.view.extent(0);
   const auto tiling = get_tiling(g_in.view);
