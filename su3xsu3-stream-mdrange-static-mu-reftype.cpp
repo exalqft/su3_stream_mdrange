@@ -95,8 +95,6 @@ using constSUNField = Kokkos::View<const val_t**** [Nc][Nc], Kokkos::MemoryTrait
 template <int Nd, int Nc>
 using StreamHostArray = typename GaugeField<Nd, Nc>::HostMirror;
 
-using idx_t = int;
-
 // forward declaration
 template <int Nc>
 struct Matrix;
